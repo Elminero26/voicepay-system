@@ -15,6 +15,7 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final RestTemplate restTemplate;
+    private final PaymentGatewaySimulator paymentGatewaySimulator;
 
     @Value("${app.user-service.url}")
     private String userServiceUrl;
@@ -35,9 +36,20 @@ public class PaymentService {
             throw new RuntimeException("Validation failed: User does not exist or User Service is down.");
         }
 
-        // Por ahora lo marcamos como COMPLETED por defecto
-        payment.setStatus(Payment.PaymentStatus.COMPLETED);
-        return paymentRepository.save(payment);
+        // Primero guardamos el pago como PENDING
+        payment.setStatus(Payment.PaymentStatus.PENDING);
+        Payment savedPayment = paymentRepository.save(payment);
+
+        // Llamamos al simulador de la pasarela
+        boolean success = paymentGatewaySimulator.processPayment(savedPayment.getAmount());
+
+        if (success) {
+            savedPayment.setStatus(Payment.PaymentStatus.COMPLETED);
+        } else {
+            savedPayment.setStatus(Payment.PaymentStatus.FAILED);
+        }
+
+        return paymentRepository.save(savedPayment);
     }
 
     public Payment getPaymentById(Long id) {
