@@ -2,6 +2,7 @@ package com.voicepay.ivr.service;
 
 import com.voicepay.ivr.dto.CallRequest;
 import com.voicepay.ivr.dto.IvrResponse;
+import com.voicepay.ivr.dto.LiveCall;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +18,7 @@ import java.util.Map;
 public class IvrService {
 
     private final RestTemplate restTemplate;
+    private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Value("${app.user-service.url}")
     private String userServiceUrl;
@@ -26,6 +28,7 @@ public class IvrService {
 
     public IvrResponse handleIncomingCall(CallRequest request) {
         log.info("Incoming call from: {}", request.getFrom());
+        String callId = java.util.UUID.randomUUID().toString();
 
         try {
             // Buscamos al usuario por teléfono
@@ -35,6 +38,15 @@ public class IvrService {
             if (user != null) {
                 String name = (String) user.get("name");
                 Long userId = ((Number) user.get("id")).longValue();
+
+                // Registramos la llamada en vivo
+                liveCalls.put(callId, LiveCall.builder()
+                        .id(callId)
+                        .phoneNumber(request.getFrom())
+                        .userName(name)
+                        .status("WAITING_CONFIRMATION")
+                        .timestamp(java.time.LocalDateTime.now())
+                        .build());
 
                 return IvrResponse.builder()
                         .message("Bienvenido " + name + ". Usted tiene un pago pendiente. Pulse 1 para pagar 25 euros.")
@@ -55,6 +67,15 @@ public class IvrService {
     public IvrResponse confirmPayment(Long userId) {
         log.info("Confirming payment for user: {}", userId);
 
+        // Buscamos la llamada activa para este usuario (simplificado)
+        LiveCall activeCall = liveCalls.values().stream()
+                .filter(c -> c.getStatus().equals("WAITING_CONFIRMATION"))
+                .findFirst().orElse(null);
+
+        if (activeCall != null) {
+            activeCall.setStatus("PROCESSING_PAYMENT");
+        }
+
         try {
             Map<String, Object> paymentRequest = new HashMap<>();
             paymentRequest.put("userId", userId);
@@ -63,16 +84,34 @@ public class IvrService {
 
             restTemplate.postForObject(paymentServiceUrl, paymentRequest, Map.class);
 
+            if (activeCall != null) {
+                activeCall.setStatus("COMPLETED");
+                // Removemos después de un tiempo o lo dejamos para que el frontend lo vea
+                new java.util.Timer().schedule(new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        liveCalls.remove(activeCall.getId());
+                    }
+                }, 5000);
+            }
+
             return IvrResponse.builder()
                     .message("Gracias. Su pago ha sido procesado correctamente. ¡Adiós!")
                     .nextAction("HANGUP")
                     .build();
         } catch (Exception e) {
             log.error("Error processing payment: {}", e.getMessage());
+            if (activeCall != null) {
+                activeCall.setStatus("FAILED");
+            }
             return IvrResponse.builder()
                     .message("Hubo un error al procesar su pago. Inténtelo de nuevo más tarde.")
                     .nextAction("HANGUP")
                     .build();
         }
+    }
+
+    public java.util.Collection<LiveCall> getLiveCalls() {
+        return liveCalls.values();
     }
 }

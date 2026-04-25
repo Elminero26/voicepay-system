@@ -2,5 +2,6 @@ C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\
 C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\controller\IvrController.java
 C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\dto\CallRequest.java
 C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\dto\IvrResponse.java
+C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\dto\LiveCall.java
 C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\IvrServiceApplication.java
 C:\Proyecto de pagos\voicepay-system\ivr-service\src\main\java\com\voicepay\ivr\service\IvrService.java

@@ -23,4 +23,9 @@ public class IvrController {
     public IvrResponse confirmPayment(@RequestParam Long userId) {
         return ivrService.confirmPayment(userId);
     }
+
+    @GetMapping("/calls/live")
+    public java.util.Collection<com.voicepay.ivr.dto.LiveCall> getLiveCalls() {
+        return ivrService.getLiveCalls();
+    }
 }
