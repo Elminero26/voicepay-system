@@ -1,5 +1,6 @@
 package com.voicepay.payment.controller;
 
+import com.voicepay.payment.dto.PaymentStats;
 import com.voicepay.payment.model.Payment;
 import com.voicepay.payment.service.PaymentService;
 import jakarta.validation.Valid;
@@ -23,6 +24,16 @@ public class PaymentController {
     @PostMapping
     public Payment createPayment(@Valid @RequestBody Payment payment) {
         return paymentService.createPayment(payment);
+    }
+
+    @GetMapping("/stats")
+    public PaymentStats getStats() {
+        return paymentService.getPaymentStats();
+    }
+
+    @GetMapping("/recent")
+    public List<Payment> getRecentPayments() {
+        return paymentService.getRecentPayments();
     }
 
     @GetMapping("/user/{userId}")

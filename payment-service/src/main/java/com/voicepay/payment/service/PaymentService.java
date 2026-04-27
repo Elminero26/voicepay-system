@@ -1,5 +1,6 @@
 package com.voicepay.payment.service;
 
+import com.voicepay.payment.dto.PaymentStats;
 import com.voicepay.payment.model.Payment;
 import com.voicepay.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
@@ -7,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -26,6 +28,28 @@ public class PaymentService {
 
     public List<Payment> getPaymentsByUserId(Long userId) {
         return paymentRepository.findByUserId(userId);
+    }
+
+    public List<Payment> getRecentPayments() {
+        return paymentRepository.findTop10ByOrderByCreatedAtDesc();
+    }
+
+    public PaymentStats getPaymentStats() {
+        long completed = paymentRepository.countByStatus(Payment.PaymentStatus.COMPLETED);
+        long failed = paymentRepository.countByStatus(Payment.PaymentStatus.FAILED);
+        long pending = paymentRepository.countByStatus(Payment.PaymentStatus.PENDING);
+        
+        BigDecimal totalAmount = paymentRepository.findAll().stream()
+                .filter(p -> p.getStatus() == Payment.PaymentStatus.COMPLETED)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return PaymentStats.builder()
+                .completed(completed)
+                .failed(failed)
+                .pending(pending)
+                .totalAmount(totalAmount)
+                .build();
     }
 
     public Payment createPayment(Payment payment) {
