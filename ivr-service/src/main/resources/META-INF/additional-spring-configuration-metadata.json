@@ -1,0 +1,14 @@
+{
+  "properties": [
+    {
+      "name": "app.user-service.url",
+      "type": "java.lang.String",
+      "description": "URL for the user service."
+    },
+    {
+      "name": "app.payment-service.url",
+      "type": "java.lang.String",
+      "description": "URL for the payment service."
+    }
+  ]
+}
