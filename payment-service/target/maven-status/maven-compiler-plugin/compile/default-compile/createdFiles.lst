@@ -2,9 +2,12 @@ com\voicepay\payment\model\Payment$PaymentStatus.class
 com\voicepay\payment\model\Payment$PaymentBuilder.class
 com\voicepay\payment\model\Payment.class
 com\voicepay\payment\controller\PaymentController.class
+com\voicepay\payment\security\SecurityConfig.class
 com\voicepay\payment\service\PaymentService.class
 com\voicepay\payment\repository\PaymentRepository.class
+com\voicepay\payment\security\JwtAuthFilter.class
 com\voicepay\payment\dto\PaymentStats$PaymentStatsBuilder.class
 com\voicepay\payment\service\PaymentGatewaySimulator.class
+com\voicepay\payment\config\OpenApiConfig.class
 com\voicepay\payment\PaymentServiceApplication.class
 com\voicepay\payment\dto\PaymentStats.class

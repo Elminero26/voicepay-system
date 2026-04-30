@@ -1,8 +1,11 @@
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\config\AppProperties.java
+C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\config\OpenApiConfig.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\controller\PaymentController.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\dto\PaymentStats.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\model\Payment.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\PaymentServiceApplication.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\repository\PaymentRepository.java
+C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\security\JwtAuthFilter.java
+C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\security\SecurityConfig.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\service\PaymentGatewaySimulator.java
 C:\Proyecto de pagos\voicepay-system\payment-service\src\main\java\com\voicepay\payment\service\PaymentService.java
