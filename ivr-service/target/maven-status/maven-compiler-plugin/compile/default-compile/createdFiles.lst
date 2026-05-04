@@ -1,8 +1,11 @@
 com\voicepay\ivr\security\JwtAuthFilter.class
 com\voicepay\ivr\config\AppConfig.class
+com\voicepay\ivr\config\AppProperties.class
 com\voicepay\ivr\service\IvrService.class
+com\voicepay\ivr\service\LiveCallBroadcaster.class
 com\voicepay\ivr\dto\CallRequest.class
 com\voicepay\ivr\dto\IvrResponse$IvrResponseBuilder.class
+com\voicepay\ivr\config\WebSocketConfig.class
 com\voicepay\ivr\dto\IvrResponse.class
 com\voicepay\ivr\config\OpenApiConfig.class
 com\voicepay\ivr\IvrServiceApplication.class

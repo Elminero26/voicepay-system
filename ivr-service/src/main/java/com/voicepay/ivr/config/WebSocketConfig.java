@@ -22,7 +22,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(@org.springframework.lang.NonNull StompEndpointRegistry registry) {
         // Punto de conexión WebSocket
         registry.addEndpoint("/ws")
-                .setAllowedOrigins("http://localhost:5173", "http://localhost:3000")
-                .withSockJS(); // Fallback para navegadores sin WebSocket nativo
+                .setAllowedOrigins("http://localhost:5173", "http://localhost:5174", "http://localhost:3000")
+                .withSockJS(); // SockJS ya maneja internamente las credenciales si el CORS global lo permite
     }
 }
