@@ -36,6 +36,7 @@ class UserServiceTest {
                 .name("Test User")
                 .email("test@voicepay.com")
                 .phoneNumber("+34611223344")
+                .role("user")
                 .active(true)
                 .build();
     }
@@ -132,6 +133,7 @@ class UserServiceTest {
                 .name("Updated Name")
                 .email("updated@voicepay.com")
                 .phoneNumber("+34699999999")
+                .role("admin")
                 .build();
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));

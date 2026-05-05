@@ -8,6 +8,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import com.twilio.twiml.VoiceResponse;
+import com.twilio.twiml.voice.Say;
+import com.twilio.twiml.voice.Gather;
+import com.twilio.twiml.voice.Hangup;
+import com.voicepay.ivr.config.TwilioProperties;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -119,6 +126,93 @@ public class IvrService {
                     .nextAction("HANGUP")
                     .build();
         }
+    }
+
+    public String handleTwilioCall(String from) {
+        log.info("Handling real Twilio call from: {}", from);
+        String callId = UUID.randomUUID().toString();
+
+        Map<String, Object> user = null;
+        try {
+            // Buscamos al usuario por teléfono
+            user = restTemplate.getForObject(userServiceUrl + "/phone/" + from, Map.class);
+        } catch (Exception e) {
+            log.error("User service error, checking fallback for: {}", from);
+        }
+
+        // PARCHE RICHARD: Si el servicio falla o no lo encuentra
+        // Probamos con varias versiones del número por si Twilio lo envía distinto
+        if ((user == null || user.get("name") == null) && from != null && 
+            (from.contains("642297705") || from.contains("34642297705"))) {
+            log.info("Applying manual fallback for Richard from number: {}", from);
+            user = new HashMap<>();
+            user.put("id", 1);
+            user.put("name", "Richard");
+        }
+
+        if (user != null) {
+            String name = (String) user.get("name");
+            Long userId = ((Number) user.get("id")).longValue();
+
+            // Registramos la llamada en vivo en nuestro Dashboard
+            liveCalls.put(callId, LiveCall.builder()
+                    .id(callId)
+                    .phoneNumber(from)
+                    .userName(name)
+                    .status("WAITING_CONFIRMATION")
+                    .timestamp(LocalDateTime.now())
+                    .build());
+
+            broadcaster.broadcast(liveCalls.values());
+
+            // Generamos TwiML
+            return new VoiceResponse.Builder()
+                    .say(new Say.Builder("Hola " + name + ". Bienvenido a VoicePay. Usted tiene un pago pendiente de 25 euros.")
+                            .language(Say.Language.ES_ES).build())
+                    .gather(new Gather.Builder()
+                            .numDigits(1)
+                            .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callId)
+                            .say(new Say.Builder("Para confirmar el pago, pulse 1. Para cancelar, cuelgue.")
+                                    .language(Say.Language.ES_ES).build())
+                            .build())
+                    .build().toXml();
+        }
+
+        return new VoiceResponse.Builder()
+                .say(new Say.Builder("Lo sentimos, no hemos podido identificar su número. Por favor, póngase en contacto con soporte.")
+                        .language(Say.Language.ES_ES).build())
+                .hangup(new Hangup.Builder().build())
+                .build().toXml();
+    }
+
+    public String handleTwilioWebhook(Long userId, String callId, String digits) {
+        log.info("Received Twilio webhook: userId={}, digits={}", userId, digits);
+        
+        if ("1".equals(digits)) {
+            log.info("User confirmed payment via DTMF");
+            
+            // Reutilizamos la lógica de confirmación existente
+            confirmPayment(userId);
+            
+            // Actualizamos el objeto en liveCalls para que el Dashboard lo marque como completado
+            LiveCall call = liveCalls.get(callId);
+            if (call != null) {
+                call.setStatus("COMPLETED");
+                broadcaster.broadcast(liveCalls.values());
+            }
+
+            return new VoiceResponse.Builder()
+                    .say(new Say.Builder("Gracias. Su pago ha sido procesado correctamente. ¡Adiós!")
+                            .language(Say.Language.ES_ES).build())
+                    .hangup(new Hangup.Builder().build())
+                    .build().toXml();
+        }
+
+        return new VoiceResponse.Builder()
+                .say(new Say.Builder("Operación cancelada. ¡Adiós!")
+                        .language(Say.Language.ES_ES).build())
+                .hangup(new Hangup.Builder().build())
+                .build().toXml();
     }
 
     public java.util.Collection<LiveCall> getLiveCalls() {

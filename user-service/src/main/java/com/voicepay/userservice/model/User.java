@@ -35,5 +35,9 @@ public class User {
 
     @Column(nullable = false)
     @Builder.Default
+    private String role = "user";
+
+    @Column(nullable = false)
+    @Builder.Default
     private Boolean active = true;
 }
