@@ -19,6 +19,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserService — Tests Unitarios")
+@SuppressWarnings("null")
 class UserServiceTest {
 
     @Mock

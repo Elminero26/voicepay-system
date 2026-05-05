@@ -22,6 +22,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IvrService — Tests Unitarios")
+@SuppressWarnings("null")
 class IvrServiceTest {
 
     @Mock private RestTemplate restTemplate;
@@ -46,7 +47,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("handleIncomingCall — identifica usuario y crea llamada en vivo")
-    @SuppressWarnings("unchecked")
     void handleIncomingCall_createsLiveCall_whenUserFound() {
         Map<String, Object> mockUser = Map.of("id", 2, "name", "Test User");
         when(restTemplate.getForObject(anyString(), eq(Map.class))).thenReturn(mockUser);
@@ -68,7 +68,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("handleIncomingCall — responde HANGUP si usuario no encontrado")
-    @SuppressWarnings("unchecked")
     void handleIncomingCall_returnsHangup_whenUserNotFound() {
         when(restTemplate.getForObject(anyString(), eq(Map.class)))
                 .thenThrow(new RuntimeException("User not found"));
@@ -87,7 +86,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("handleIncomingCall — estado inicial es WAITING_CONFIRMATION")
-    @SuppressWarnings("unchecked")
     void handleIncomingCall_setsInitialStatus_waitingConfirmation() {
         Map<String, Object> mockUser = Map.of("id", 3, "name", "Juan Perez");
         when(restTemplate.getForObject(anyString(), eq(Map.class))).thenReturn(mockUser);
@@ -111,7 +109,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("getLiveCalls — devuelve llamadas activas registradas")
-    @SuppressWarnings("unchecked")
     void getLiveCalls_returnsActiveCalls() {
         Map<String, Object> mockUser = Map.of("id", 2, "name", "Test User");
         when(restTemplate.getForObject(anyString(), eq(Map.class))).thenReturn(mockUser);
@@ -125,7 +122,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("confirmPayment — cambia a PROCESSING_PAYMENT antes del pago")
-    @SuppressWarnings("unchecked")
     void confirmPayment_setsProcessingStatus() {
         // Primero registrar una llamada
         Map<String, Object> mockUser = Map.of("id", 2, "name", "Test User");
@@ -142,7 +138,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("confirmPayment — devuelve mensaje de éxito cuando el pago funciona")
-    @SuppressWarnings("unchecked")
     void confirmPayment_returnsSuccess_whenPaymentWorks() {
         Map<String, Object> mockUser = Map.of("id", 2, "name", "Test User");
         when(restTemplate.getForObject(anyString(), eq(Map.class))).thenReturn(mockUser);
@@ -157,7 +152,6 @@ class IvrServiceTest {
 
     @Test
     @DisplayName("confirmPayment — devuelve error cuando el payment-service falla")
-    @SuppressWarnings("unchecked")
     void confirmPayment_returnsError_whenPaymentServiceFails() {
         Map<String, Object> mockUser = Map.of("id", 2, "name", "Test User");
         when(restTemplate.getForObject(anyString(), eq(Map.class))).thenReturn(mockUser);

@@ -12,7 +12,6 @@ import com.twilio.twiml.VoiceResponse;
 import com.twilio.twiml.voice.Say;
 import com.twilio.twiml.voice.Gather;
 import com.twilio.twiml.voice.Hangup;
-import com.voicepay.ivr.config.TwilioProperties;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -128,6 +127,7 @@ public class IvrService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public String handleTwilioCall(String from) {
         log.info("Handling real Twilio call from: {}", from);
         String callId = UUID.randomUUID().toString();

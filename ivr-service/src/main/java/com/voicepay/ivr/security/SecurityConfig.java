@@ -27,7 +27,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         // Cuando allowCredentials es true, no se puede usar "*" en allowedOrigins.
         // Usamos allowedOriginPatterns para permitir localhost de forma flexible.
-        config.setAllowedOriginPatterns(List.of("http://localhost:5173", "http://localhost:5174", "http://localhost:3000"));
+        config.setAllowedOriginPatterns(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true); // <--- Esto debe ser TRUE para WebSockets/SockJS

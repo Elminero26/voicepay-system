@@ -15,4 +15,8 @@ Write-Host "-> Payment Service iniciado (Puerto 8081)" -ForegroundColor Green
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:JAVA_HOME='C:\Program Files\Java\jdk-21'; ./mvnw spring-boot:run -pl ivr-service" -WindowStyle Normal
 Write-Host "-> IVR Service iniciado (Puerto 8082)" -ForegroundColor Green
 
+# Iniciar Gateway Service
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:JAVA_HOME='C:\Program Files\Java\jdk-21'; ./mvnw spring-boot:run -pl gateway-service" -WindowStyle Normal
+Write-Host "-> Gateway Service iniciado (Puerto 9000)" -ForegroundColor Green
+
 Write-Host "`n¡Todos los servicios están arrancando en ventanas separadas!" -ForegroundColor Yellow

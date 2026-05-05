@@ -23,6 +23,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PaymentService — Tests Unitarios")
+@SuppressWarnings("null")
 class PaymentServiceTest {
 
     @Mock private PaymentRepository paymentRepository;
@@ -34,7 +35,6 @@ class PaymentServiceTest {
 
     private Payment completedPayment;
     private Payment failedPayment;
-    private Payment pendingPayment;
 
     @BeforeEach
     void setUp() {
@@ -49,12 +49,6 @@ class PaymentServiceTest {
                 .id(2L).userId(2L)
                 .amount(new BigDecimal("100.00"))
                 .status(Payment.PaymentStatus.FAILED)
-                .build();
-
-        pendingPayment = Payment.builder()
-                .id(3L).userId(2L)
-                .amount(new BigDecimal("50.00"))
-                .status(Payment.PaymentStatus.PENDING)
                 .build();
     }
 

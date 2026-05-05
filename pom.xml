@@ -28,6 +28,7 @@
 		<module>user-service</module>
 		<module>payment-service</module>
 		<module>ivr-service</module>
+		<module>gateway-service</module>
 	</modules>
 
 	<dependencies>
