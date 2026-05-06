@@ -61,20 +61,29 @@ public class PaymentService {
             throw new RuntimeException("Validation failed: User does not exist or User Service is down.");
         }
 
-        // Primero guardamos el pago como PENDING
+        // Simplemente guardamos el pago como PENDING para que el IVR lo gestione
         payment.setStatus(Payment.PaymentStatus.PENDING);
-        Payment savedPayment = paymentRepository.save(payment);
+        return paymentRepository.save(payment);
+    }
+
+    public Payment completePaymentByUserId(Long userId) {
+        // Buscamos el último pago pendiente de este usuario
+        List<Payment> payments = paymentRepository.findByUserId(userId);
+        Payment pendingPayment = payments.stream()
+                .filter(p -> p.getStatus() == Payment.PaymentStatus.PENDING)
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No pending payment found for user: " + userId));
 
         // Llamamos al simulador de la pasarela
-        boolean success = paymentGatewaySimulator.processPayment(savedPayment.getAmount());
+        boolean success = paymentGatewaySimulator.processPayment(pendingPayment.getAmount());
 
         if (success) {
-            savedPayment.setStatus(Payment.PaymentStatus.COMPLETED);
+            pendingPayment.setStatus(Payment.PaymentStatus.COMPLETED);
         } else {
-            savedPayment.setStatus(Payment.PaymentStatus.FAILED);
+            pendingPayment.setStatus(Payment.PaymentStatus.FAILED);
         }
 
-        return paymentRepository.save(savedPayment);
+        return paymentRepository.save(pendingPayment);
     }
 
     public Payment getPaymentById(Long id) {

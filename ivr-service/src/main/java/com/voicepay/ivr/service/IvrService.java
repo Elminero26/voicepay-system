@@ -15,6 +15,7 @@ import com.twilio.twiml.voice.Hangup;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -48,11 +49,24 @@ public class IvrService {
                 String name = (String) user.get("name");
                 Long userId = ((Number) user.get("id")).longValue();
 
+                // Buscamos el pago pendiente real
+                BigDecimal amount = BigDecimal.valueOf(25.0); // Fallback
+                try {
+                    Map<String, Object> pendingPayment = restTemplate.getForObject(
+                            paymentServiceUrl + "/pending/" + userId, Map.class);
+                    if (pendingPayment != null) {
+                        amount = new BigDecimal(pendingPayment.get("amount").toString());
+                    }
+                } catch (Exception e) {
+                    log.warn("No pending payment found for user {}, using fallback", userId);
+                }
+
                 // Registramos la llamada en vivo
                 liveCalls.put(callId, LiveCall.builder()
                         .id(callId)
                         .phoneNumber(request.getFrom())
                         .userName(name)
+                        .amount(amount.doubleValue()) // Guardamos el importe real
                         .status("WAITING_CONFIRMATION")
                         .timestamp(java.time.LocalDateTime.now())
                         .build());
@@ -61,7 +75,7 @@ public class IvrService {
                 broadcaster.broadcast(liveCalls.values());
 
                 return IvrResponse.builder()
-                        .message("Bienvenido " + name + ". Usted tiene un pago pendiente. Pulse 1 para pagar 25 euros.")
+                        .message("Bienvenido " + name + ". Usted tiene un pago pendiente de " + amount + " euros. Pulse 1 para pagar.")
                         .nextAction("WAIT_FOR_CONFIRMATION")
                         .userId(userId)
                         .build();
@@ -90,12 +104,8 @@ public class IvrService {
         }
 
         try {
-            Map<String, Object> paymentRequest = new HashMap<>();
-            paymentRequest.put("userId", userId);
-            paymentRequest.put("amount", 25.0);
-            paymentRequest.put("description", "Pago vía IVR");
-
-            restTemplate.postForObject(paymentServiceUrl, paymentRequest, Map.class);
+            // Llamamos al nuevo endpoint de confirmación en el Payment Service
+            restTemplate.postForObject(paymentServiceUrl + "/confirm/" + userId, null, Map.class);
 
             if (activeCall != null) {
                 activeCall.setStatus("COMPLETED");
@@ -154,11 +164,24 @@ public class IvrService {
             String name = (String) user.get("name");
             Long userId = ((Number) user.get("id")).longValue();
 
+            // Buscamos el pago pendiente real
+            String amountStr = "25"; 
+            try {
+                Map<String, Object> pendingPayment = restTemplate.getForObject(
+                        paymentServiceUrl + "/pending/" + userId, Map.class);
+                if (pendingPayment != null) {
+                    amountStr = pendingPayment.get("amount").toString();
+                }
+            } catch (Exception e) {
+                log.warn("No pending payment found for user {}, using fallback", userId);
+            }
+
             // Registramos la llamada en vivo en nuestro Dashboard
             liveCalls.put(callId, LiveCall.builder()
                     .id(callId)
                     .phoneNumber(from)
                     .userName(name)
+                    .amount(Double.parseDouble(amountStr))
                     .status("WAITING_CONFIRMATION")
                     .timestamp(LocalDateTime.now())
                     .build());
@@ -167,7 +190,7 @@ public class IvrService {
 
             // Generamos TwiML
             return new VoiceResponse.Builder()
-                    .say(new Say.Builder("Hola " + name + ". Bienvenido a VoicePay. Usted tiene un pago pendiente de 25 euros.")
+                    .say(new Say.Builder("Hola " + name + ". Bienvenido a VoicePay. Usted tiene un pago pendiente de " + amountStr + " euros.")
                             .language(Say.Language.ES_ES).build())
                     .gather(new Gather.Builder()
                             .numDigits(1)

@@ -16,6 +16,7 @@ public class LiveCall {
     private String phoneNumber;
     private String userName;
     private String status; // CONNECTED, WAITING_CONFIRMATION, COMPLETED, FAILED
+    private double amount;
     private LocalDateTime timestamp;
 
     public long getDurationSeconds() {

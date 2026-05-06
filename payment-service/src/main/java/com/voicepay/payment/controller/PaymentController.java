@@ -49,6 +49,21 @@ public class PaymentController {
         return paymentService.getPaymentsByUserId(userId);
     }
 
+    @GetMapping("/pending/{userId}")
+    @Operation(summary = "Pago pendiente por usuario", description = "Devuelve el último pago pendiente de un usuario específico.")
+    public Payment getPendingPayment(@PathVariable Long userId) {
+        return paymentService.getPaymentsByUserId(userId).stream()
+                .filter(p -> p.getStatus() == Payment.PaymentStatus.PENDING)
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No pending payment found for user: " + userId));
+    }
+
+    @PostMapping("/confirm/{userId}")
+    @Operation(summary = "Confirmar pago", description = "Procesa y completa el último pago pendiente de un usuario.")
+    public Payment confirmPayment(@PathVariable Long userId) {
+        return paymentService.completePaymentByUserId(userId);
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Obtener pago por ID", description = "Busca y devuelve los detalles de un pago específico.")
     public Payment getPaymentById(@PathVariable Long id) {

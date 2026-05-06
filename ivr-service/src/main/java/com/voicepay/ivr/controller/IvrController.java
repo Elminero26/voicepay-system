@@ -29,9 +29,10 @@ public class IvrController {
         return ivrService.handleIncomingCall(request);
     }
 
-    @PostMapping("/confirm-payment")
+    @PostMapping("/confirm")
     @Operation(summary = "Confirmar pago en llamada", description = "Simula que el usuario confirma el pago durante la llamada IVR. Desencadena la comunicación con el Payment Service.")
-    public IvrResponse confirmPayment(@RequestParam Long userId) {
+    public IvrResponse confirmPayment(@RequestBody java.util.Map<String, Object> payload) {
+        Long userId = Long.valueOf(payload.get("userId").toString());
         return ivrService.confirmPayment(userId);
     }
 
