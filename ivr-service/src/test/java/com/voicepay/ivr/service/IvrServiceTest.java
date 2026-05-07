@@ -33,6 +33,9 @@ class IvrServiceTest {
     @Mock
     private LiveCallBroadcaster broadcaster;
 
+    @Mock
+    private com.voicepay.ivr.repository.LiveCallRepository callRepository;
+
     @InjectMocks
     private IvrService ivrService;
 

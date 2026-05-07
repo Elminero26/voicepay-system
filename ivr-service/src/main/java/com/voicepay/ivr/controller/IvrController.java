@@ -56,4 +56,10 @@ public class IvrController {
     public java.util.Collection<com.voicepay.ivr.dto.LiveCall> getLiveCalls() {
         return ivrService.getLiveCalls();
     }
+
+    @GetMapping("/calls/history")
+    @Operation(summary = "Obtener historial de llamadas", description = "Recupera todas las llamadas registradas en la base de datos de PostgreSQL.")
+    public java.util.List<com.voicepay.ivr.dto.LiveCall> getCallHistory() {
+        return ivrService.getCallHistory();
+    }
 }

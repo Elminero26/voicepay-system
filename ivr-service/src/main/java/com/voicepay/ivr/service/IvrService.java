@@ -27,6 +27,7 @@ public class IvrService {
 
     private final RestTemplate restTemplate;
     private final LiveCallBroadcaster broadcaster;
+    private final com.voicepay.ivr.repository.LiveCallRepository callRepository;
     private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Value("${app.user-service.url}")
@@ -89,11 +90,13 @@ public class IvrService {
                         .userName(name)
                         .callAmount(amount.doubleValue()) // <--- CAMBIO DE NOMBRE
                         .status("WAITING_CONFIRMATION")
+                        .direction("INBOUND")
                         .timestamp(java.time.LocalDateTime.now())
                         .build();
                 
                 log.info("Registering LiveCall in dashboard: {} with amount {}", callId, call.getCallAmount());
                 liveCalls.put(callId, call);
+                callRepository.save(call); // 💾 Guardamos en PostgreSQL
                 broadcaster.broadcast(liveCalls.values());
 
                 return IvrResponse.builder()
@@ -122,6 +125,7 @@ public class IvrService {
 
         if (activeCall != null) {
             activeCall.setStatus("PROCESSING_PAYMENT");
+            callRepository.save(activeCall); // 💾 Actualizamos en DB
             broadcaster.broadcast(liveCalls.values()); // 📡 Estado: procesando
         }
 
@@ -136,6 +140,10 @@ public class IvrService {
 
             if (activeCall != null) {
                 activeCall.setStatus("COMPLETED");
+                activeCall.setSelectedOption("1"); // Opción de pago
+                activeCall.setDuration(java.time.Duration.between(activeCall.getTimestamp(), java.time.LocalDateTime.now()).getSeconds());
+                activeCall.setDirection("INBOUND");
+                callRepository.save(activeCall); // 💾 Guardamos éxito con detalles en DB
                 broadcaster.broadcast(liveCalls.values()); // 📡 Estado: completado
                 // Removemos después de 5 segundos y notificamos de nuevo
                 new java.util.Timer().schedule(new java.util.TimerTask() {
@@ -155,6 +163,7 @@ public class IvrService {
             log.error("Error processing payment: {}", e.getMessage());
             if (activeCall != null) {
                 activeCall.setStatus("FAILED");
+                callRepository.save(activeCall); // 💾 Guardamos fallo en DB
                 broadcaster.broadcast(liveCalls.values()); // 📡 Estado: fallido
                 // Limpieza automática tras fallo
                 new java.util.Timer().schedule(new java.util.TimerTask() {
@@ -276,6 +285,10 @@ public class IvrService {
                         .language(Say.Language.ES_ES).build())
                 .hangup(new Hangup.Builder().build())
                 .build().toXml();
+    }
+
+    public java.util.List<LiveCall> getCallHistory() {
+        return callRepository.findAll();
     }
 
     public java.util.Collection<LiveCall> getLiveCalls() {
