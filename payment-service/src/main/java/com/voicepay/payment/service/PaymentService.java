@@ -23,6 +23,15 @@ public class PaymentService {
     @Value("${app.user-service.url}")
     private String userServiceUrl;
 
+    @Value("${app.api.key}")
+    private String apiKey;
+
+    private org.springframework.http.HttpHeaders getHeadersWithApiKey() {
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.set("X-API-KEY", apiKey);
+        return headers;
+    }
+
     public List<Payment> getAllPayments() {
         return paymentRepository.findAll();
     }
@@ -54,9 +63,14 @@ public class PaymentService {
     }
 
     public Payment createPayment(Payment payment) {
-        // Validación: Consultamos al user-service si el usuario existe
+        // Validación: Consultamos al user-service si el usuario existe con API Key
         try {
-            restTemplate.getForObject(userServiceUrl + "/" + payment.getUserId(), Object.class);
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            restTemplate.exchange(
+                    userServiceUrl + "/" + payment.getUserId(),
+                    org.springframework.http.HttpMethod.GET,
+                    entity,
+                    Object.class);
         } catch (Exception e) {
             throw new RuntimeException("Validation failed: User does not exist or User Service is down.");
         }

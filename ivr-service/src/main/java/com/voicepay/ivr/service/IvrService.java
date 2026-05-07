@@ -35,15 +35,28 @@ public class IvrService {
     @Value("${app.payment-service.url}")
     private String paymentServiceUrl;
 
+    @Value("${app.api.key}")
+    private String apiKey;
+
+    private org.springframework.http.HttpHeaders getHeadersWithApiKey() {
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.set("X-API-KEY", apiKey);
+        return headers;
+    }
+
     @SuppressWarnings("unchecked")
     public IvrResponse handleIncomingCall(CallRequest request) {
         log.info("Incoming call from: {}", request.getFrom());
         String callId = java.util.UUID.randomUUID().toString();
 
         try {
-            // Buscamos al usuario por teléfono
-            Map<String, Object> user = restTemplate.getForObject(
-                    userServiceUrl + "/phone/" + request.getFrom(), Map.class);
+            // Buscamos al usuario por teléfono con API Key
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            Map<String, Object> user = restTemplate.exchange(
+                    userServiceUrl + "/phone/" + request.getFrom(),
+                    org.springframework.http.HttpMethod.GET,
+                    entity,
+                    Map.class).getBody();
 
             if (user != null) {
                 String name = (String) user.get("name");
@@ -144,8 +157,13 @@ public class IvrService {
 
         Map<String, Object> user = null;
         try {
-            // Buscamos al usuario por teléfono
-            user = restTemplate.getForObject(userServiceUrl + "/phone/" + from, Map.class);
+            // Buscamos al usuario por teléfono con API Key
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            user = restTemplate.exchange(
+                    userServiceUrl + "/phone/" + from,
+                    org.springframework.http.HttpMethod.GET,
+                    entity,
+                    Map.class).getBody();
         } catch (Exception e) {
             log.error("User service error, checking fallback for: {}", from);
         }

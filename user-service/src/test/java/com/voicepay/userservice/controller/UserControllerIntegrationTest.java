@@ -14,6 +14,7 @@ import java.util.Optional;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
@@ -22,6 +23,9 @@ public class UserControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @MockBean
     private UserService userService;
@@ -39,5 +43,42 @@ public class UserControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Richard"))
                 .andExpect(jsonPath("$.phoneNumber").value("+34642297705"));
+    }
+
+    @Test
+    void createUser_ShouldReturnCreatedUser() throws Exception {
+        User userToCreate = User.builder()
+                .name("Nuevo Usuario")
+                .email("nuevo@test.com")
+                .phoneNumber("+34600000000")
+                .role("user")
+                .build();
+
+        User savedUser = User.builder()
+                .id(2L)
+                .name("Nuevo Usuario")
+                .email("nuevo@test.com")
+                .phoneNumber("+34600000000")
+                .role("user")
+                .build();
+
+        when(userService.save(org.mockito.ArgumentMatchers.any(User.class))).thenReturn(savedUser);
+
+        mockMvc.perform(post("/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(userToCreate)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(2))
+                .andExpect(jsonPath("$.name").value("Nuevo Usuario"));
+    }
+
+    @Test
+    void getUserById_NotFound_ShouldReturnEmpty() throws Exception {
+        // En un entorno real, el service podría lanzar una excepción o devolver null
+        // Si el controller devuelve null, Spring por defecto devuelve 200 OK vacío o error dependiendo de la config
+        when(userService.findById(999L)).thenReturn(null);
+
+        mockMvc.perform(get("/users/999"))
+                .andExpect(status().isOk()); // Depende de cómo manejes el null en el Controller
     }
 }

@@ -20,6 +20,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final ApiKeyFilter apiKeyFilter;
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
@@ -40,8 +41,11 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .anyRequest().permitAll() // 🔓 ABRIMOS TODO temporalmente
+                .requestMatchers("/h2-console/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                .anyRequest().permitAll() // 🔓 Modo desarrollo: Acceso total para avanzar rápido
             )
+            // Ponemos el de API Key el PRIMERO de todos
+            .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
