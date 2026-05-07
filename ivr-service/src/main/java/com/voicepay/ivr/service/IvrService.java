@@ -88,7 +88,7 @@ public class IvrService {
                         .phoneNumber(request.getFrom())
                         .userName(name)
                         .callAmount(amount.doubleValue()) // <--- CAMBIO DE NOMBRE
-                        .status("IN-PROGRESS")
+                        .status("WAITING_CONFIRMATION")
                         .timestamp(java.time.LocalDateTime.now())
                         .build();
                 
@@ -156,6 +156,14 @@ public class IvrService {
             if (activeCall != null) {
                 activeCall.setStatus("FAILED");
                 broadcaster.broadcast(liveCalls.values()); // 📡 Estado: fallido
+                // Limpieza automática tras fallo
+                new java.util.Timer().schedule(new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        liveCalls.remove(activeCall.getId());
+                        broadcaster.broadcast(liveCalls.values());
+                    }
+                }, 5000);
             }
             return IvrResponse.builder()
                     .message("Hubo un error al procesar su pago. Inténtelo de nuevo más tarde.")
