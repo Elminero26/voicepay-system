@@ -46,8 +46,8 @@ public class IvrService {
 
     @SuppressWarnings("unchecked")
     public IvrResponse handleIncomingCall(CallRequest request) {
-        log.info("Incoming call from: {}", request.getFrom());
-        String callId = java.util.UUID.randomUUID().toString();
+        log.info("Incoming call simulation from: {}", request.getFrom());
+        String callId = "SIM-" + java.util.UUID.randomUUID().toString().substring(0, 8);
 
         try {
             // Buscamos al usuario por teléfono con API Key
@@ -61,30 +61,39 @@ public class IvrService {
             if (user != null) {
                 String name = (String) user.get("name");
                 Long userId = ((Number) user.get("id")).longValue();
+                log.info("User identified for live call: {} (ID: {})", name, userId);
 
                 // Buscamos el pago pendiente real
-                BigDecimal amount = BigDecimal.valueOf(25.0); // Fallback
+                BigDecimal amount = BigDecimal.valueOf(25.00); // Valor de seguridad
                 try {
-                    Map<String, Object> pendingPayment = restTemplate.getForObject(
-                            paymentServiceUrl + "/pending/" + userId, Map.class);
-                    if (pendingPayment != null) {
-                        amount = new BigDecimal(pendingPayment.get("amount").toString());
+                    // Usamos exchange para tener más control sobre la respuesta
+                    org.springframework.http.ResponseEntity<Map> paymentResp = restTemplate.exchange(
+                            paymentServiceUrl + "/pending/" + userId,
+                            org.springframework.http.HttpMethod.GET,
+                            entity,
+                            Map.class);
+                            
+                    if (paymentResp.getBody() != null && paymentResp.getBody().get("amount") != null) {
+                        Object amtObj = paymentResp.getBody().get("amount");
+                        amount = new BigDecimal(amtObj.toString());
+                        log.info("Found pending payment of {} for user {}", amount, name);
                     }
                 } catch (Exception e) {
-                    log.warn("No pending payment found for user {}, using fallback", userId);
+                    log.error("Could not find real payment for user {}, using fallback $25.00. Error: {}", name, e.getMessage());
                 }
 
                 // Registramos la llamada en vivo
-                liveCalls.put(callId, LiveCall.builder()
+                LiveCall call = LiveCall.builder()
                         .id(callId)
                         .phoneNumber(request.getFrom())
                         .userName(name)
-                        .amount(amount.doubleValue()) // Guardamos el importe real
-                        .status("WAITING_CONFIRMATION")
+                        .callAmount(amount.doubleValue()) // <--- CAMBIO DE NOMBRE
+                        .status("IN-PROGRESS")
                         .timestamp(java.time.LocalDateTime.now())
-                        .build());
-
-                // 📡 Emitir a todos los clientes WebSocket
+                        .build();
+                
+                log.info("Registering LiveCall in dashboard: {} with amount {}", callId, call.getCallAmount());
+                liveCalls.put(callId, call);
                 broadcaster.broadcast(liveCalls.values());
 
                 return IvrResponse.builder()
@@ -94,7 +103,7 @@ public class IvrService {
                         .build();
             }
         } catch (Exception e) {
-            log.error("User not found or error calling User Service: {}", e.getMessage());
+            log.error("User identification failed: {}", e.getMessage());
         }
 
         return IvrResponse.builder()
@@ -117,8 +126,13 @@ public class IvrService {
         }
 
         try {
-            // Llamamos al nuevo endpoint de confirmación en el Payment Service
-            restTemplate.postForObject(paymentServiceUrl + "/confirm/" + userId, null, Map.class);
+            // Llamamos al nuevo endpoint de confirmación en el Payment Service con seguridad
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            restTemplate.exchange(
+                    paymentServiceUrl + "/confirm/" + userId,
+                    org.springframework.http.HttpMethod.POST,
+                    entity,
+                    Map.class);
 
             if (activeCall != null) {
                 activeCall.setStatus("COMPLETED");
@@ -134,7 +148,7 @@ public class IvrService {
             }
 
             return IvrResponse.builder()
-                    .message("Gracias. Su pago ha sido procesado correctamente. ¡Adiós!")
+                    .message("Gracias. Su pago ha sido procesado correctamente. Le hemos enviado un mensaje de confirmación a su móvil. ¡Adiós!")
                     .nextAction("HANGUP")
                     .build();
         } catch (Exception e) {
@@ -199,7 +213,7 @@ public class IvrService {
                     .id(callId)
                     .phoneNumber(from)
                     .userName(name)
-                    .amount(Double.parseDouble(amountStr))
+                    .callAmount(Double.parseDouble(amountStr))
                     .status("WAITING_CONFIRMATION")
                     .timestamp(LocalDateTime.now())
                     .build());
@@ -243,7 +257,7 @@ public class IvrService {
             }
 
             return new VoiceResponse.Builder()
-                    .say(new Say.Builder("Gracias. Su pago ha sido procesado correctamente. ¡Adiós!")
+                    .say(new Say.Builder("Gracias. Su pago ha sido procesado correctamente. Le hemos enviado un mensaje de confirmación a su móvil. ¡Adiós!")
                             .language(Say.Language.ES_ES).build())
                     .hangup(new Hangup.Builder().build())
                     .build().toXml();
