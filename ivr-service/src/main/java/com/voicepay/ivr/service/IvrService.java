@@ -30,18 +30,18 @@ public class IvrService {
     private final com.voicepay.ivr.repository.LiveCallRepository callRepository;
     private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
 
+    private final com.voicepay.ivr.security.JwtUtil jwtUtil;
+
     @Value("${app.user-service.url}")
     private String userServiceUrl;
 
     @Value("${app.payment-service.url}")
     private String paymentServiceUrl;
 
-    @Value("${app.api.key}")
-    private String apiKey;
-
-    private org.springframework.http.HttpHeaders getHeadersWithApiKey() {
+    private org.springframework.http.HttpHeaders getHeadersWithJwt() {
         org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-        headers.set("X-API-KEY", apiKey);
+        String token = jwtUtil.generateToken("ivr-service", "ROLE_ADMIN");
+        headers.set("Authorization", "Bearer " + token);
         return headers;
     }
 
@@ -52,7 +52,7 @@ public class IvrService {
 
         try {
             // Buscamos al usuario por teléfono con API Key
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
             Map<String, Object> user = restTemplate.exchange(
                     userServiceUrl + "/phone/" + request.getFrom(),
                     org.springframework.http.HttpMethod.GET,
@@ -131,7 +131,7 @@ public class IvrService {
 
         try {
             // Llamamos al nuevo endpoint de confirmación en el Payment Service con seguridad
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
             restTemplate.exchange(
                     paymentServiceUrl + "/confirm/" + userId,
                     org.springframework.http.HttpMethod.POST,
@@ -188,8 +188,7 @@ public class IvrService {
 
         Map<String, Object> user = null;
         try {
-            // Buscamos al usuario por teléfono con API Key
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
             user = restTemplate.exchange(
                     userServiceUrl + "/phone/" + from,
                     org.springframework.http.HttpMethod.GET,
@@ -216,8 +215,12 @@ public class IvrService {
             // Buscamos el pago pendiente real
             String amountStr = "25"; 
             try {
-                Map<String, Object> pendingPayment = restTemplate.getForObject(
-                        paymentServiceUrl + "/pending/" + userId, Map.class);
+                org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
+                Map<String, Object> pendingPayment = restTemplate.exchange(
+                        paymentServiceUrl + "/pending/" + userId,
+                        org.springframework.http.HttpMethod.GET,
+                        entity,
+                        Map.class).getBody();
                 if (pendingPayment != null) {
                     amountStr = pendingPayment.get("amount").toString();
                 }

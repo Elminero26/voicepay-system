@@ -1,4 +1,4 @@
-package com.voicepay.userservice.security;
+package com.voicepay.notification.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

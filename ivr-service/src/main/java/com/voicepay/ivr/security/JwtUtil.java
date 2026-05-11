@@ -1,4 +1,4 @@
-package com.voicepay.userservice.security;
+package com.voicepay.ivr.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -12,10 +12,7 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
-    // A secure 256-bit key for HMAC-SHA256
     private final String SECRET_KEY = "MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure";
-    
-    // Token validity in milliseconds (24 hours)
     private final long JWT_EXPIRATION = 86400000;
 
     private Key getSigningKey() {

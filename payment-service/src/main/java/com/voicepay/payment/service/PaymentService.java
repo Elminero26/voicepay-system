@@ -20,18 +20,18 @@ public class PaymentService {
     private final RestTemplate restTemplate;
     private final PaymentGatewaySimulator paymentGatewaySimulator;
 
+    private final com.voicepay.payment.security.JwtUtil jwtUtil;
+
     @Value("${app.user-service.url}")
     private String userServiceUrl;
-
-    @Value("${app.api.key}")
-    private String apiKey;
 
     @Value("${app.notification-service.url}")
     private String notificationServiceUrl;
 
-    private org.springframework.http.HttpHeaders getHeadersWithApiKey() {
+    private org.springframework.http.HttpHeaders getHeadersWithJwt() {
         org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-        headers.set("X-API-KEY", apiKey);
+        String token = jwtUtil.generateToken("payment-service", "ROLE_ADMIN");
+        headers.set("Authorization", "Bearer " + token);
         return headers;
     }
 
@@ -68,7 +68,7 @@ public class PaymentService {
     public Payment createPayment(Payment payment) {
         // Validación: Consultamos al user-service si el usuario existe con API Key
         try {
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
             restTemplate.exchange(
                     userServiceUrl + "/" + payment.getUserId(),
                     org.springframework.http.HttpMethod.GET,
@@ -112,7 +112,7 @@ public class PaymentService {
             // 👤 Paso extra: Intentamos obtener el nombre del usuario desde el User Service
             String userName = "Usuario";
             try {
-                org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithApiKey());
+                org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
                 org.springframework.http.ResponseEntity<java.util.Map> userResponse = restTemplate.exchange(
                         userServiceUrl + "/" + payment.getUserId(),
                         org.springframework.http.HttpMethod.GET,
@@ -126,7 +126,7 @@ public class PaymentService {
                 System.err.println("No se pudo obtener el nombre del usuario: " + e.getMessage());
             }
 
-            org.springframework.http.HttpHeaders headers = getHeadersWithApiKey();
+            org.springframework.http.HttpHeaders headers = getHeadersWithJwt();
             headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
 
             java.util.Map<String, String> notificationRequest = new java.util.HashMap<>();

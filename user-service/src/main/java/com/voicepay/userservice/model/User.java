@@ -33,9 +33,13 @@ public class User {
     @Column(nullable = false, unique = true)
     private String phoneNumber;
 
+    @NotBlank(message = "Password is required")
+    @Column(nullable = true)
+    private String password;
+
     @Column(nullable = false)
     @Builder.Default
-    private String role = "user";
+    private String role = "ROLE_USER";
 
     @Column(nullable = false)
     @Builder.Default
