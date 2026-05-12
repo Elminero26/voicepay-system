@@ -2,6 +2,7 @@ package com.voicepay.userservice.controller;
 
 import com.voicepay.userservice.dto.AuthResponse;
 import com.voicepay.userservice.dto.LoginRequest;
+import com.voicepay.userservice.dto.RefreshTokenRequest;
 import com.voicepay.userservice.model.User;
 import com.voicepay.userservice.repository.UserRepository;
 import com.voicepay.userservice.security.JwtUtil;
@@ -32,12 +33,35 @@ public class AuthController {
         }
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
 
         return ResponseEntity.ok(AuthResponse.builder()
                 .token(token)
+                .refreshToken(refreshToken)
                 .email(user.getEmail())
                 .role(user.getRole())
                 .build());
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshTokenRequest request) {
+        String refreshToken = request.getRefreshToken();
+        if (refreshToken != null && jwtUtil.isTokenValid(refreshToken)) {
+            String email = jwtUtil.extractEmail(refreshToken);
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            
+            String newToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
+            
+            return ResponseEntity.ok(AuthResponse.builder()
+                    .token(newToken)
+                    .refreshToken(refreshToken)
+                    .email(user.getEmail())
+                    .role(user.getRole())
+                    .build());
+        } else {
+            return ResponseEntity.status(401).body("Invalid refresh token");
+        }
     }
 
     @PostMapping("/register")

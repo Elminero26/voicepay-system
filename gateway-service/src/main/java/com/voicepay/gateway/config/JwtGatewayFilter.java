@@ -21,8 +21,10 @@ public class JwtGatewayFilter implements WebFilter {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().toString();
 
-        // Permitir rutas públicas
-        if (path.startsWith("/auth") || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs") || path.startsWith("/h2-console")) {
+        // Permitir rutas públicas y WebSockets
+        if (path.startsWith("/auth") || path.startsWith("/login") || path.startsWith("/oauth2") || 
+            path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs") || 
+            path.startsWith("/h2-console") || path.startsWith("/ws")) {
             return chain.filter(exchange);
         }
 
