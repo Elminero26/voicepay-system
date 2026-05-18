@@ -3,7 +3,7 @@ package com.voicepay.userservice.model;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
+import com.voicepay.userservice.security.DeterministicEncryptionConverter;
 import lombok.*;
 
 @Entity
@@ -28,6 +28,7 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
+    @Convert(converter = DeterministicEncryptionConverter.class)
     @Column(unique = true)
     private String phoneNumber;
 

@@ -2,11 +2,13 @@ package com.voicepay.userservice;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.voicepay.userservice.config.AppProperties;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @SpringBootApplication
+@EnableConfigurationProperties(AppProperties.class)
 public class UserServiceApplication implements WebMvcConfigurer {
 
 	public static void main(String[] args) {

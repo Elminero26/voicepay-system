@@ -2,7 +2,6 @@ package com.voicepay.ivr.service;
 
 import com.voicepay.ivr.dto.CallRequest;
 import com.voicepay.ivr.dto.IvrResponse;
-import com.voicepay.ivr.dto.LiveCall;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +24,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IvrService Unit Tests")
+@SuppressWarnings("null")
 class IvrServiceTest {
 
     @Mock
@@ -56,7 +56,7 @@ class IvrServiceTest {
         // Mock User Service
         Map<String, Object> userMap = new HashMap<>();
         userMap.put("id", 1);
-        userMap.put("name", "Richard");
+        userMap.put("name", "Cristian");
         when(restTemplate.exchange(contains("/phone/"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Map.class)))
                 .thenReturn(ResponseEntity.ok(userMap));
 
@@ -70,7 +70,7 @@ class IvrServiceTest {
         IvrResponse response = ivrService.handleIncomingCall(request);
 
         // THEN
-        assertThat(response.getMessage()).contains("Richard");
+        assertThat(response.getMessage()).contains("Cristian");
         assertThat(response.getMessage()).contains("75.5");
         
         // Verify broadcast to dashboard

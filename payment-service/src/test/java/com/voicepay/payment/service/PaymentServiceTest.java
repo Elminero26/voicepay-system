@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +29,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PaymentService Unit Tests")
-@SuppressWarnings("unchecked")
+@SuppressWarnings({"null", "unchecked"})
 class PaymentServiceTest {
 
     @Mock
@@ -72,10 +73,10 @@ class PaymentServiceTest {
         // Mock User Service (for the name in notification)
         Map<String, Object> userMap = new HashMap<>();
         userMap.put("id", 100);
-        userMap.put("name", "Richard Test");
-        ResponseEntity<Map> userResponse = ResponseEntity.ok(userMap);
+        userMap.put("name", "Cristian Test");
+        ResponseEntity<Map<String, Object>> userResponse = ResponseEntity.ok(userMap);
         
-        when(restTemplate.exchange(contains("/users/100"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Map.class)))
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(userResponse);
 
         // WHEN

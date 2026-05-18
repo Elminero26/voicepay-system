@@ -16,7 +16,6 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -53,32 +52,44 @@ public class IvrService {
         try {
             // Buscamos al usuario por teléfono con API Key
             org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
+            log.info("Requesting user info for: {}", request.getFrom());
+            java.util.List<String> currentEvents = new java.util.ArrayList<>();
+            currentEvents.add("Llamada recibida de " + request.getFrom());
+            currentEvents.add("Consultando User Service para identificar número...");
+            
             Map<String, Object> user = restTemplate.exchange(
                     userServiceUrl + "/phone/" + request.getFrom(),
                     org.springframework.http.HttpMethod.GET,
                     entity,
                     Map.class).getBody();
 
+
             if (user != null) {
                 String name = (String) user.get("name");
                 Long userId = ((Number) user.get("id")).longValue();
                 log.info("User identified for live call: {} (ID: {})", name, userId);
+                currentEvents.add("Usuario identificado: " + name + " (ID: " + userId + ")");
+                currentEvents.add("Consultando Payment Service para deudas pendientes...");
+
 
                 // Buscamos el pago pendiente real
                 BigDecimal amount = BigDecimal.valueOf(25.00); // Valor de seguridad
                 try {
                     // Usamos exchange para tener más control sobre la respuesta
-                    org.springframework.http.ResponseEntity<Map> paymentResp = restTemplate.exchange(
+                    org.springframework.http.ResponseEntity<java.util.Map<String, Object>> paymentResp = restTemplate.exchange(
                             paymentServiceUrl + "/pending/" + userId,
                             org.springframework.http.HttpMethod.GET,
                             entity,
-                            Map.class);
+                            new org.springframework.core.ParameterizedTypeReference<java.util.Map<String, Object>>() {});
                             
-                    if (paymentResp.getBody() != null && paymentResp.getBody().get("amount") != null) {
-                        Object amtObj = paymentResp.getBody().get("amount");
+                    java.util.Map<String, Object> paymentData = paymentResp.getBody();
+                    if (paymentData != null && paymentData.get("amount") != null) {
+                        Object amtObj = paymentData.get("amount");
                         amount = new BigDecimal(amtObj.toString());
                         log.info("Found pending payment of {} for user {}", amount, name);
+                        currentEvents.add("Deuda encontrada: " + amount + "€");
                     }
+
                 } catch (Exception e) {
                     log.error("Could not find real payment for user {}, using fallback $25.00. Error: {}", name, e.getMessage());
                 }
@@ -92,7 +103,9 @@ public class IvrService {
                         .status("WAITING_CONFIRMATION")
                         .direction("INBOUND")
                         .timestamp(java.time.LocalDateTime.now())
+                        .callEvents(currentEvents)
                         .build();
+
                 
                 log.info("Registering LiveCall in dashboard: {} with amount {}", callId, call.getCallAmount());
                 liveCalls.put(callId, call);
@@ -100,8 +113,8 @@ public class IvrService {
                 broadcaster.broadcast(liveCalls.values());
 
                 return IvrResponse.builder()
-                        .message("Bienvenido " + name + ". Usted tiene un pago pendiente de " + amount + " euros. Pulse 1 para pagar.")
-                        .nextAction("WAIT_FOR_CONFIRMATION")
+                        .message("Bienvenido " + name + ". Usted tiene un pago pendiente de " + amount + " euros. Pulse 1 para pagar, o pulse 2 para hablar con un agente.")
+                        .nextAction("WAIT_FOR_INPUT")
                         .userId(userId)
                         .build();
             }
@@ -116,17 +129,37 @@ public class IvrService {
     }
 
     public IvrResponse confirmPayment(Long userId) {
-        log.info("Confirming payment for user: {}", userId);
+        return processUserOption(userId, "1");
+    }
 
-        // Buscamos la llamada activa para este usuario (simplificado)
+    public IvrResponse processUserOption(Long userId, String digits) {
+        log.info("Processing option {} for user: {}", digits, userId);
+
         LiveCall activeCall = liveCalls.values().stream()
-                .filter(c -> c.getStatus().equals("WAITING_CONFIRMATION"))
+                .filter(c -> c.getStatus().equals("WAITING_CONFIRMATION") || c.getStatus().equals("PROCESSING_PAYMENT"))
                 .findFirst().orElse(null);
 
-        if (activeCall != null) {
-            activeCall.setStatus("PROCESSING_PAYMENT");
-            callRepository.save(activeCall); // 💾 Actualizamos en DB
-            broadcaster.broadcast(liveCalls.values()); // 📡 Estado: procesando
+        if ("2".equals(digits)) {
+            if (activeCall != null) {
+                activeCall.setStatus("TRANSFERRED");
+                activeCall.setSelectedOption("2");
+                activeCall.getCallEvents().add("Usuario pulsó 2: Transfiriendo a un agente humano...");
+                callRepository.save(activeCall);
+                broadcaster.broadcast(liveCalls.values());
+            }
+            return IvrResponse.builder()
+                    .message("Un momento, por favor. Le estamos transfiriendo con el próximo agente disponible.")
+                    .nextAction("TRANSFER")
+                    .build();
+        } else if ("1".equals(digits)) {
+            if (activeCall != null) {
+                activeCall.setStatus("PROCESSING_PAYMENT");
+                activeCall.setSelectedOption(digits);
+                activeCall.getCallEvents().add("Usuario pulsó " + digits + ": Iniciando confirmación de pago...");
+                activeCall.getCallEvents().add("Llamando a Payment Service (/confirm)...");
+                callRepository.save(activeCall);
+                broadcaster.broadcast(liveCalls.values());
+            }
         }
 
         try {
@@ -139,7 +172,10 @@ public class IvrService {
                     Map.class);
 
             if (activeCall != null) {
+                activeCall.getCallEvents().add("Pago confirmado con éxito en pasarela.");
+                activeCall.getCallEvents().add("Llamando a Notification Service para enviar SMS/Push...");
                 activeCall.setStatus("COMPLETED");
+
                 activeCall.setSelectedOption("1"); // Opción de pago
                 activeCall.setDuration(java.time.Duration.between(activeCall.getTimestamp(), java.time.LocalDateTime.now()).getSeconds());
                 activeCall.setDirection("INBOUND");
@@ -198,15 +234,7 @@ public class IvrService {
             log.error("User service error, checking fallback for: {}", from);
         }
 
-        // PARCHE RICHARD: Si el servicio falla o no lo encuentra
-        // Probamos con varias versiones del número por si Twilio lo envía distinto
-        if ((user == null || user.get("name") == null) && from != null && 
-            (from.contains("642297705") || from.contains("34642297705"))) {
-            log.info("Applying manual fallback for Richard from number: {}", from);
-            user = new HashMap<>();
-            user.put("id", 1);
-            user.put("name", "Richard");
-        }
+
 
         if (user != null) {
             String name = (String) user.get("name");
@@ -247,7 +275,7 @@ public class IvrService {
                     .gather(new Gather.Builder()
                             .numDigits(1)
                             .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callId)
-                            .say(new Say.Builder("Para confirmar el pago, pulse 1. Para cancelar, cuelgue.")
+                            .say(new Say.Builder("Para confirmar el pago, pulse 1. Para hablar con un agente, pulse 2. Para cancelar, cuelgue.")
                                     .language(Say.Language.ES_ES).build())
                             .build())
                     .build().toXml();
@@ -263,11 +291,20 @@ public class IvrService {
     public String handleTwilioWebhook(Long userId, String callId, String digits) {
         log.info("Received Twilio webhook: userId={}, digits={}", userId, digits);
         
-        if ("1".equals(digits)) {
-            log.info("User confirmed payment via DTMF");
+        if ("1".equals(digits) || "2".equals(digits)) {
+            log.info("User selected option {} via DTMF", digits);
             
             // Reutilizamos la lógica de confirmación existente
-            confirmPayment(userId);
+            processUserOption(userId, digits);
+            
+            // Si fue transferencia, devolvemos TwiML de transferencia (simulado con mensaje)
+            if ("2".equals(digits)) {
+                return new VoiceResponse.Builder()
+                        .say(new Say.Builder("Un momento, por favor. Transfiriendo...")
+                                .language(Say.Language.ES_ES).build())
+                        .hangup(new Hangup.Builder().build()) // En Twilio real aquí iría un <Dial>
+                        .build().toXml();
+            }
             
             // Actualizamos el objeto en liveCalls para que el Dashboard lo marque como completado
             LiveCall call = liveCalls.get(callId);

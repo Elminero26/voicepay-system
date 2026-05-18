@@ -9,4 +9,11 @@ import lombok.Data;
 @ConfigurationProperties(prefix = "app")
 public class AppProperties {
     private String userServiceUrl;
+    private String encryptionKey;
+    private NotificationService notificationService = new NotificationService();
+
+    @Data
+    public static class NotificationService {
+        private String url;
+    }
 }

@@ -30,10 +30,11 @@ public class IvrController {
     }
 
     @PostMapping("/confirm")
-    @Operation(summary = "Confirmar pago en llamada", description = "Simula que el usuario confirma el pago durante la llamada IVR. Desencadena la comunicación con el Payment Service.")
+    @Operation(summary = "Procesar opción de usuario", description = "Simula que el usuario pulsa una tecla durante la llamada (1 para pago, 2 para transferencia).")
     public IvrResponse confirmPayment(@RequestBody java.util.Map<String, Object> payload) {
         Long userId = Long.valueOf(payload.get("userId").toString());
-        return ivrService.confirmPayment(userId);
+        String option = payload.containsKey("option") ? payload.get("option").toString() : "1";
+        return ivrService.processUserOption(userId, option);
     }
 
     @RequestMapping(value = "/twilio-call", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")

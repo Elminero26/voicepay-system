@@ -26,6 +26,12 @@ public class LiveCall {
     private String selectedOption; // Opción pulsada (ej. "1" para pagar)
     private String direction;     // "INBOUND" o "OUTBOUND"
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "call_events", joinColumns = @JoinColumn(name = "call_id"))
+    @Column(name = "event")
+    @Builder.Default
+    private java.util.List<String> callEvents = new java.util.ArrayList<>();
+
     public long getDurationSeconds() {
         return java.time.Duration.between(timestamp, LocalDateTime.now()).getSeconds();
     }

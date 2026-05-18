@@ -5,11 +5,14 @@ import com.voicepay.payment.model.Payment;
 import com.voicepay.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -113,11 +116,11 @@ public class PaymentService {
             String userName = "Usuario";
             try {
                 org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
-                org.springframework.http.ResponseEntity<java.util.Map> userResponse = restTemplate.exchange(
+                org.springframework.http.ResponseEntity<Map<String, Object>> userResponse = restTemplate.exchange(
                         userServiceUrl + "/" + payment.getUserId(),
-                        org.springframework.http.HttpMethod.GET,
+                        HttpMethod.GET,
                         entity,
-                        java.util.Map.class);
+                        new ParameterizedTypeReference<Map<String, Object>>() {});
                 
                 if (userResponse.getBody() != null && userResponse.getBody().get("name") != null) {
                     userName = userResponse.getBody().get("name").toString();
