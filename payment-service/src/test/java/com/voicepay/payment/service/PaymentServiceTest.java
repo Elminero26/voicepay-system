@@ -41,6 +41,9 @@ class PaymentServiceTest {
     @Mock
     private PaymentGatewaySimulator paymentGatewaySimulator;
 
+    @Mock
+    private com.voicepay.payment.security.JwtUtil jwtUtil;
+
     @InjectMocks
     private PaymentService paymentService;
 
@@ -59,7 +62,9 @@ class PaymentServiceTest {
         // Inyectamos valores manuales para @Value
         ReflectionTestUtils.setField(paymentService, "userServiceUrl", "http://user-service");
         ReflectionTestUtils.setField(paymentService, "notificationServiceUrl", "http://notification-service");
-        ReflectionTestUtils.setField(paymentService, "apiKey", "test-api-key");
+        
+        // Mock default behavior of jwtUtil
+        lenient().when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("dummy-token");
     }
 
     @Test

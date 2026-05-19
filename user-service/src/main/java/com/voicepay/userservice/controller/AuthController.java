@@ -24,43 +24,60 @@ public class AuthController {
     private final JwtUtil jwtUtil;
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+        try {
+            User user = userRepository.findByEmail(request.getEmail())
+                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Invalid credentials");
-        }
+            if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+                throw new RuntimeException("Credenciales inválidas");
+            }
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
-        String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
+            String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
+            String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
 
-        return ResponseEntity.ok(AuthResponse.builder()
-                .token(token)
-                .refreshToken(refreshToken)
-                .email(user.getEmail())
-                .role(user.getRole())
-                .build());
-    }
-
-    @PostMapping("/refresh")
-    public ResponseEntity<?> refresh(@RequestBody RefreshTokenRequest request) {
-        String refreshToken = request.getRefreshToken();
-        if (refreshToken != null && jwtUtil.isTokenValid(refreshToken)) {
-            String email = jwtUtil.extractEmail(refreshToken);
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-            
-            String newToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
-            
             return ResponseEntity.ok(AuthResponse.builder()
-                    .token(newToken)
+                    .token(token)
                     .refreshToken(refreshToken)
                     .email(user.getEmail())
                     .role(user.getRole())
                     .build());
-        } else {
-            return ResponseEntity.status(401).body("Invalid refresh token");
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(new java.util.HashMap<String, String>() {{
+                put("error", "Unauthorized");
+                put("message", e.getMessage());
+            }});
+        }
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshTokenRequest request) {
+        try {
+            String refreshToken = request.getRefreshToken();
+            if (refreshToken != null && jwtUtil.isTokenValid(refreshToken)) {
+                String email = jwtUtil.extractEmail(refreshToken);
+                User user = userRepository.findByEmail(email)
+                        .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+                
+                String newToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
+                
+                return ResponseEntity.ok(AuthResponse.builder()
+                        .token(newToken)
+                        .refreshToken(refreshToken)
+                        .email(user.getEmail())
+                        .role(user.getRole())
+                        .build());
+            } else {
+                return ResponseEntity.status(401).body(new java.util.HashMap<String, String>() {{
+                    put("error", "Unauthorized");
+                    put("message", "Token de refresco inválido");
+                }});
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(new java.util.HashMap<String, String>() {{
+                put("error", "Unauthorized");
+                put("message", e.getMessage());
+            }});
         }
     }
 

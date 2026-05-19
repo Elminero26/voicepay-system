@@ -24,7 +24,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IvrService Unit Tests")
-@SuppressWarnings("null")
+@SuppressWarnings({"null", "unchecked"})
 class IvrServiceTest {
 
     @Mock
@@ -36,6 +36,9 @@ class IvrServiceTest {
     @Mock
     private com.voicepay.ivr.repository.LiveCallRepository callRepository;
 
+    @Mock
+    private com.voicepay.ivr.security.JwtUtil jwtUtil;
+
     @InjectMocks
     private IvrService ivrService;
 
@@ -43,7 +46,9 @@ class IvrServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(ivrService, "userServiceUrl", "http://user-service");
         ReflectionTestUtils.setField(ivrService, "paymentServiceUrl", "http://payment-service");
-        ReflectionTestUtils.setField(ivrService, "apiKey", "test-key");
+        
+        // Mock default behavior of jwtUtil
+        lenient().when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("dummy-token");
     }
 
     @Test
@@ -63,7 +68,7 @@ class IvrServiceTest {
         // Mock Payment Service
         Map<String, Object> paymentMap = new HashMap<>();
         paymentMap.put("amount", 75.50);
-        when(restTemplate.exchange(contains("/pending/"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Map.class)))
+        when(restTemplate.exchange(contains("/pending/"), eq(HttpMethod.GET), any(HttpEntity.class), any(org.springframework.core.ParameterizedTypeReference.class)))
                 .thenReturn(ResponseEntity.ok(paymentMap));
 
         // WHEN
