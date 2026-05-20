@@ -8,7 +8,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -28,7 +27,10 @@ public class PaymentServiceUnitTest {
     private PaymentGatewaySimulator paymentGatewaySimulator;
 
     @Mock
-    private RestTemplate restTemplate;
+    private com.voicepay.payment.client.UserServiceClient userServiceClient;
+
+    @Mock
+    private com.voicepay.payment.client.NotificationServiceClient notificationServiceClient;
 
     @InjectMocks
     private PaymentService paymentService;
@@ -42,6 +44,9 @@ public class PaymentServiceUnitTest {
         pendingPayment.setUserId(3L);
         pendingPayment.setAmount(new BigDecimal("50.0"));
         pendingPayment.setStatus(Payment.PaymentStatus.PENDING);
+
+        // Mock lenient user client to avoid NPE on notifications
+        lenient().when(userServiceClient.getUserDetails(anyLong(), any())).thenReturn(java.util.Map.of("name", "Usuario"));
     }
 
     @Test

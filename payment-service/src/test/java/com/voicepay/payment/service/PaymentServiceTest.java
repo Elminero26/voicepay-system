@@ -3,6 +3,8 @@ package com.voicepay.payment.service;
 import com.voicepay.payment.model.Payment;
 import com.voicepay.payment.repository.PaymentRepository;
 import com.voicepay.payment.dto.PaymentStats;
+import com.voicepay.payment.client.UserServiceClient;
+import com.voicepay.payment.client.NotificationServiceClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,13 +12,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
-
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
@@ -36,7 +31,10 @@ class PaymentServiceTest {
     private PaymentRepository paymentRepository;
 
     @Mock
-    private RestTemplate restTemplate;
+    private UserServiceClient userServiceClient;
+
+    @Mock
+    private NotificationServiceClient notificationServiceClient;
 
     @Mock
     private PaymentGatewaySimulator paymentGatewaySimulator;
@@ -59,10 +57,6 @@ class PaymentServiceTest {
         pendingPayment.setCurrency("EUR");
         pendingPayment.setStatus(Payment.PaymentStatus.PENDING);
 
-        // Inyectamos valores manuales para @Value
-        ReflectionTestUtils.setField(paymentService, "userServiceUrl", "http://user-service");
-        ReflectionTestUtils.setField(paymentService, "notificationServiceUrl", "http://notification-service");
-        
         // Mock default behavior of jwtUtil
         lenient().when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("dummy-token");
     }
@@ -75,14 +69,12 @@ class PaymentServiceTest {
         when(paymentGatewaySimulator.processPayment(any())).thenReturn(true);
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArguments()[0]);
 
-        // Mock User Service (for the name in notification)
+        // Mock User Service Client (for the name in notification)
         Map<String, Object> userMap = new HashMap<>();
-        userMap.put("id", 100);
+        userMap.put("id", 100L);
         userMap.put("name", "Cristian Test");
-        ResponseEntity<Map<String, Object>> userResponse = ResponseEntity.ok(userMap);
         
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), any(ParameterizedTypeReference.class)))
-                .thenReturn(userResponse);
+        when(userServiceClient.getUserDetails(eq(100L), any())).thenReturn(userMap);
 
         // WHEN
         Payment result = paymentService.completePaymentByUserId(100L);
@@ -92,7 +84,7 @@ class PaymentServiceTest {
         assertThat(result.getTransactionId()).startsWith("TX-");
         
         // Verify Notification was sent
-        verify(restTemplate, times(1)).postForEntity(anyString(), any(HttpEntity.class), eq(String.class));
+        verify(notificationServiceClient, times(1)).sendNotification(any(), any());
         verify(paymentRepository, times(1)).save(any(Payment.class));
     }
 
@@ -121,8 +113,7 @@ class PaymentServiceTest {
         Payment newPayment = Payment.builder().userId(100L).amount(new BigDecimal("10.00")).build();
         
         // Mock User Validation
-        when(restTemplate.exchange(contains("/100"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Object.class)))
-                .thenReturn(ResponseEntity.ok(new Object()));
+        when(userServiceClient.validateUser(eq(100L), any())).thenReturn(new Object());
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArguments()[0]);
 
         // WHEN

@@ -5,9 +5,7 @@ import com.voicepay.ivr.dto.IvrResponse;
 import com.voicepay.ivr.dto.LiveCall;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import com.twilio.twiml.VoiceResponse;
 import com.twilio.twiml.voice.Say;
 import com.twilio.twiml.voice.Gather;
@@ -18,24 +16,22 @@ import java.util.UUID;
 import java.math.BigDecimal;
 import java.util.Map;
 
+import com.voicepay.ivr.client.UserServiceClient;
+import com.voicepay.ivr.client.PaymentServiceClient;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @SuppressWarnings("null")
 public class IvrService {
 
-    private final RestTemplate restTemplate;
+    private final UserServiceClient userServiceClient;
+    private final PaymentServiceClient paymentServiceClient;
     private final LiveCallBroadcaster broadcaster;
     private final com.voicepay.ivr.repository.LiveCallRepository callRepository;
     private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final com.voicepay.ivr.security.JwtUtil jwtUtil;
-
-    @Value("${app.user-service.url}")
-    private String userServiceUrl;
-
-    @Value("${app.payment-service.url}")
-    private String paymentServiceUrl;
 
     private org.springframework.http.HttpHeaders getHeadersWithJwt() {
         org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
@@ -50,18 +46,12 @@ public class IvrService {
         String callId = "SIM-" + java.util.UUID.randomUUID().toString().substring(0, 8);
 
         try {
-            // Buscamos al usuario por teléfono con API Key
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
             log.info("Requesting user info for: {}", request.getFrom());
             java.util.List<String> currentEvents = new java.util.ArrayList<>();
             currentEvents.add("Llamada recibida de " + request.getFrom());
             currentEvents.add("Consultando User Service para identificar número...");
             
-            Map<String, Object> user = restTemplate.exchange(
-                    userServiceUrl + "/phone/" + request.getFrom(),
-                    org.springframework.http.HttpMethod.GET,
-                    entity,
-                    Map.class).getBody();
+            Map<String, Object> user = userServiceClient.getUserByPhone(request.getFrom(), getHeadersWithJwt());
 
 
             if (user != null) {
@@ -75,14 +65,7 @@ public class IvrService {
                 // Buscamos el pago pendiente real
                 BigDecimal amount = BigDecimal.valueOf(25.00); // Valor de seguridad
                 try {
-                    // Usamos exchange para tener más control sobre la respuesta
-                    org.springframework.http.ResponseEntity<java.util.Map<String, Object>> paymentResp = restTemplate.exchange(
-                            paymentServiceUrl + "/pending/" + userId,
-                            org.springframework.http.HttpMethod.GET,
-                            entity,
-                            new org.springframework.core.ParameterizedTypeReference<java.util.Map<String, Object>>() {});
-                            
-                    java.util.Map<String, Object> paymentData = paymentResp.getBody();
+                    java.util.Map<String, Object> paymentData = paymentServiceClient.getPendingPayment(userId, getHeadersWithJwt());
                     if (paymentData != null && paymentData.get("amount") != null) {
                         Object amtObj = paymentData.get("amount");
                         amount = new BigDecimal(amtObj.toString());
@@ -164,12 +147,7 @@ public class IvrService {
 
         try {
             // Llamamos al nuevo endpoint de confirmación en el Payment Service con seguridad
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
-            restTemplate.exchange(
-                    paymentServiceUrl + "/confirm/" + userId,
-                    org.springframework.http.HttpMethod.POST,
-                    entity,
-                    Map.class);
+            paymentServiceClient.confirmPayment(userId, getHeadersWithJwt());
 
             if (activeCall != null) {
                 activeCall.getCallEvents().add("Pago confirmado con éxito en pasarela.");
@@ -224,12 +202,7 @@ public class IvrService {
 
         Map<String, Object> user = null;
         try {
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
-            user = restTemplate.exchange(
-                    userServiceUrl + "/phone/" + from,
-                    org.springframework.http.HttpMethod.GET,
-                    entity,
-                    Map.class).getBody();
+            user = userServiceClient.getUserByPhone(from, getHeadersWithJwt());
         } catch (Exception e) {
             log.error("User service error, checking fallback for: {}", from);
         }
@@ -243,13 +216,8 @@ public class IvrService {
             // Buscamos el pago pendiente real
             String amountStr = "25"; 
             try {
-                org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
-                Map<String, Object> pendingPayment = restTemplate.exchange(
-                        paymentServiceUrl + "/pending/" + userId,
-                        org.springframework.http.HttpMethod.GET,
-                        entity,
-                        Map.class).getBody();
-                if (pendingPayment != null) {
+                Map<String, Object> pendingPayment = paymentServiceClient.getPendingPayment(userId, getHeadersWithJwt());
+                if (pendingPayment != null && pendingPayment.get("amount") != null) {
                     amountStr = pendingPayment.get("amount").toString();
                 }
             } catch (Exception e) {

@@ -4,15 +4,14 @@ import com.voicepay.payment.dto.PaymentStats;
 import com.voicepay.payment.model.Payment;
 import com.voicepay.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+
+import com.voicepay.payment.client.UserServiceClient;
+import com.voicepay.payment.client.NotificationServiceClient;
 
 @Service
 @RequiredArgsConstructor
@@ -20,16 +19,11 @@ import java.util.Map;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
-    private final RestTemplate restTemplate;
     private final PaymentGatewaySimulator paymentGatewaySimulator;
+    private final UserServiceClient userServiceClient;
+    private final NotificationServiceClient notificationServiceClient;
 
     private final com.voicepay.payment.security.JwtUtil jwtUtil;
-
-    @Value("${app.user-service.url}")
-    private String userServiceUrl;
-
-    @Value("${app.notification-service.url}")
-    private String notificationServiceUrl;
 
     private org.springframework.http.HttpHeaders getHeadersWithJwt() {
         org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
@@ -71,12 +65,7 @@ public class PaymentService {
     public Payment createPayment(Payment payment) {
         // Validación: Consultamos al user-service si el usuario existe con API Key
         try {
-            org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
-            restTemplate.exchange(
-                    userServiceUrl + "/" + payment.getUserId(),
-                    org.springframework.http.HttpMethod.GET,
-                    entity,
-                    Object.class);
+            userServiceClient.validateUser(payment.getUserId(), getHeadersWithJwt());
         } catch (Exception e) {
             throw new RuntimeException("Validation failed: User does not exist or User Service is down.");
         }
@@ -115,15 +104,9 @@ public class PaymentService {
             // 👤 Paso extra: Intentamos obtener el nombre del usuario desde el User Service
             String userName = "Usuario";
             try {
-                org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(getHeadersWithJwt());
-                org.springframework.http.ResponseEntity<Map<String, Object>> userResponse = restTemplate.exchange(
-                        userServiceUrl + "/" + payment.getUserId(),
-                        HttpMethod.GET,
-                        entity,
-                        new ParameterizedTypeReference<Map<String, Object>>() {});
-                
-                if (userResponse.getBody() != null && userResponse.getBody().get("name") != null) {
-                    userName = userResponse.getBody().get("name").toString();
+                Map<String, Object> userResponse = userServiceClient.getUserDetails(payment.getUserId(), getHeadersWithJwt());
+                if (userResponse != null && userResponse.get("name") != null) {
+                    userName = userResponse.get("name").toString();
                 }
             } catch (Exception e) {
                 System.err.println("No se pudo obtener el nombre del usuario: " + e.getMessage());
@@ -137,10 +120,7 @@ public class PaymentService {
             notificationRequest.put("message", "Hola " + userName + ", " + message);
             notificationRequest.put("type", "PUSH");
 
-            org.springframework.http.HttpEntity<java.util.Map<String, String>> request = 
-                new org.springframework.http.HttpEntity<>(notificationRequest, headers);
-            
-            restTemplate.postForEntity(notificationServiceUrl, request, String.class);
+            notificationServiceClient.sendNotification(notificationRequest, headers);
         } catch (Exception e) {
             System.err.println("Error enviando notificación: " + e.getMessage());
         }

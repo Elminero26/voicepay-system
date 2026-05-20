@@ -10,8 +10,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class AppConfig implements WebMvcConfigurer {
 
     @Bean
-    public RestTemplate restTemplate() {
-        return new RestTemplate();
+    public RestTemplate restTemplate(org.springframework.boot.web.client.RestTemplateBuilder builder) {
+        return builder
+                .connectTimeout(java.time.Duration.ofSeconds(3))
+                .readTimeout(java.time.Duration.ofSeconds(3))
+                .build();
     }
 
     @Override

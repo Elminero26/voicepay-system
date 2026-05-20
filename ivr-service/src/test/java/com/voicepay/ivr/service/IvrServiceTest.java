@@ -2,6 +2,8 @@ package com.voicepay.ivr.service;
 
 import com.voicepay.ivr.dto.CallRequest;
 import com.voicepay.ivr.dto.IvrResponse;
+import com.voicepay.ivr.client.UserServiceClient;
+import com.voicepay.ivr.client.PaymentServiceClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,12 +11,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,7 +24,10 @@ import static org.mockito.Mockito.*;
 class IvrServiceTest {
 
     @Mock
-    private RestTemplate restTemplate;
+    private UserServiceClient userServiceClient;
+
+    @Mock
+    private PaymentServiceClient paymentServiceClient;
 
     @Mock
     private LiveCallBroadcaster broadcaster;
@@ -44,9 +43,6 @@ class IvrServiceTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(ivrService, "userServiceUrl", "http://user-service");
-        ReflectionTestUtils.setField(ivrService, "paymentServiceUrl", "http://payment-service");
-        
         // Mock default behavior of jwtUtil
         lenient().when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("dummy-token");
     }
@@ -58,18 +54,16 @@ class IvrServiceTest {
         CallRequest request = new CallRequest();
         request.setFrom("+34666000111");
 
-        // Mock User Service
+        // Mock User Service Client
         Map<String, Object> userMap = new HashMap<>();
         userMap.put("id", 1);
         userMap.put("name", "Cristian");
-        when(restTemplate.exchange(contains("/phone/"), eq(HttpMethod.GET), any(HttpEntity.class), eq(Map.class)))
-                .thenReturn(ResponseEntity.ok(userMap));
+        when(userServiceClient.getUserByPhone(eq("+34666000111"), any())).thenReturn(userMap);
 
-        // Mock Payment Service
+        // Mock Payment Service Client
         Map<String, Object> paymentMap = new HashMap<>();
         paymentMap.put("amount", 75.50);
-        when(restTemplate.exchange(contains("/pending/"), eq(HttpMethod.GET), any(HttpEntity.class), any(org.springframework.core.ParameterizedTypeReference.class)))
-                .thenReturn(ResponseEntity.ok(paymentMap));
+        when(paymentServiceClient.getPendingPayment(eq(1L), any())).thenReturn(paymentMap);
 
         // WHEN
         IvrResponse response = ivrService.handleIncomingCall(request);
@@ -89,8 +83,7 @@ class IvrServiceTest {
         Long userId = 1L;
         
         // Mock successful payment confirmation
-        when(restTemplate.exchange(contains("/confirm/"), eq(HttpMethod.POST), any(HttpEntity.class), eq(Map.class)))
-                .thenReturn(ResponseEntity.ok(new HashMap<>()));
+        when(paymentServiceClient.confirmPayment(eq(userId), any())).thenReturn(new HashMap<>());
 
         // WHEN
         IvrResponse response = ivrService.confirmPayment(userId);
