@@ -71,7 +71,10 @@ public class EncryptionUtil {
         if (encryptedData == null || encryptedData.isEmpty()) return encryptedData;
         try {
             byte[] combined = Base64.getDecoder().decode(encryptedData);
-            if (combined.length < 16) return encryptedData; // Not enough data for IV
+            if (combined.length < 32) {
+                // Minimum size for standard encryption is 32 bytes (16-byte IV + at least 16-byte encrypted payload)
+                throw new IllegalArgumentException("Length too short for standard decryption");
+            }
 
             byte[] iv = new byte[16];
             System.arraycopy(combined, 0, iv, 0, iv.length);
