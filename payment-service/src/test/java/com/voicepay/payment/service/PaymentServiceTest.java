@@ -24,7 +24,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PaymentService Unit Tests")
-@SuppressWarnings({"null", "unchecked"})
+@SuppressWarnings("null")
 class PaymentServiceTest {
 
     @Mock

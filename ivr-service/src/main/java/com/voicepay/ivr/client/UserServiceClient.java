@@ -16,6 +16,7 @@ import java.util.HashMap;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class UserServiceClient {
 
     private final RestTemplate restTemplate;

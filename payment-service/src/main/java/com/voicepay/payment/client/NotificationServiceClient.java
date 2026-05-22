@@ -14,6 +14,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class NotificationServiceClient {
 
     private final RestTemplate restTemplate;

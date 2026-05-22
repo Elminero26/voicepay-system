@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class PaymentServiceClient {
 
     private final RestTemplate restTemplate;

@@ -20,7 +20,6 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IvrService Unit Tests")
-@SuppressWarnings({"null", "unchecked"})
 class IvrServiceTest {
 
     @Mock

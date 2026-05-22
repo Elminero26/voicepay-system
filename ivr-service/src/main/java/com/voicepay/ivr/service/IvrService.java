@@ -22,7 +22,6 @@ import com.voicepay.ivr.client.PaymentServiceClient;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@SuppressWarnings("null")
 public class IvrService {
 
     private final UserServiceClient userServiceClient;
@@ -40,7 +39,6 @@ public class IvrService {
         return headers;
     }
 
-    @SuppressWarnings("unchecked")
     public IvrResponse handleIncomingCall(CallRequest request) {
         log.info("Incoming call simulation from: {}", request.getFrom());
         String callId = "SIM-" + java.util.UUID.randomUUID().toString().substring(0, 8);
@@ -195,7 +193,6 @@ public class IvrService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public String handleTwilioCall(String from) {
         log.info("Handling real Twilio call from: {}", from);
         String callId = UUID.randomUUID().toString();
