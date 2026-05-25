@@ -39,3 +39,10 @@ buildNumber.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Prometheus & Grafana Native Data & Binaries
+data/
+monitoring/prometheus-*/
+monitoring/grafana-*/
+*.log
+

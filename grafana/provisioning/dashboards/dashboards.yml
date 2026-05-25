@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: 'VoicePay Dashboards'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: c:\Proyecto de pagos\voicepay-system\grafana\provisioning\dashboards
