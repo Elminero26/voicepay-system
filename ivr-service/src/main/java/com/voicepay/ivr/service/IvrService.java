@@ -22,6 +22,7 @@ import com.voicepay.ivr.client.PaymentServiceClient;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class IvrService {
 
     private final UserServiceClient userServiceClient;
