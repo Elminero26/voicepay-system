@@ -1,0 +1,18 @@
+# ===================================================================
+# CONFIGURACIÓN LOCAL DE TWILIO (SECRETOS)
+# ===================================================================
+# INSTRUCCIONES:
+# 1. Copia este archivo y renombralo como "application-local.properties"
+#    en esta misma carpeta (ivr-service/src/main/resources/).
+# 2. Rellena los valores con tus credenciales reales de Twilio.
+# 3. El archivo "application-local.properties" está añadido al .gitignore,
+#    por lo que NUNCA se subirá a GitHub ni se filtrarán tus credenciales.
+# ===================================================================
+
+# Credenciales de Twilio
+twilio.account-sid=TU_ACCOUNT_SID_REAL_AQUI
+twilio.auth-token=TU_AUTH_TOKEN_REAL_AQUI
+twilio.phone-number=TU_NUMERO_TELEFONO_TWILIO_REAL_AQUI
+
+# Tu URL pública de ngrok para los webhooks de Twilio (ej. https://xxxxxx.ngrok-free.app)
+twilio.webhook-url=https://TU_DOMINIO_DE_NGROK_AQUI

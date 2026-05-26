@@ -12,7 +12,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:JAVA_HOME='
 Write-Host "-> Payment Service iniciado (Puerto 8081)" -ForegroundColor Green
 
 # Iniciar IVR Service
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:JAVA_HOME='C:\Program Files\Java\jdk-21'; cd '$PSScriptRoot'; ./mvnw spring-boot:run -pl ivr-service" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:JAVA_HOME='C:\Program Files\Java\jdk-21'; `$env:SPRING_PROFILES_ACTIVE='local'; cd '$PSScriptRoot'; ./mvnw spring-boot:run -pl ivr-service" -WindowStyle Normal
 Write-Host "-> IVR Service iniciado (Puerto 8082)" -ForegroundColor Green
 
 # Iniciar Notification Service

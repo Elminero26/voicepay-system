@@ -46,3 +46,8 @@ monitoring/prometheus-*/
 monitoring/grafana-*/
 *.log
 
+# Local Secrets & Credentials (Ignorados por Git)
+*local.properties
+.env
+
+

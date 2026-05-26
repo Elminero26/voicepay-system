@@ -39,8 +39,10 @@ public class IvrController {
 
     @RequestMapping(value = "/twilio-call", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
     @Operation(summary = "Endpoint para Twilio", description = "Responde a las llamadas reales de Twilio usando TwiML.")
-    public String handleTwilioCall(@RequestParam("From") String from) {
-        return ivrService.handleTwilioCall(from);
+    public String handleTwilioCall(
+            @RequestParam("From") String from,
+            @RequestParam("CallSid") String callSid) {
+        return ivrService.handleTwilioCall(from, callSid);
     }
 
     @RequestMapping(value = "/twilio-webhook", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
@@ -50,6 +52,23 @@ public class IvrController {
             @RequestParam("callId") String callId,
             @RequestParam(value = "Digits", required = false) String digits) {
         return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "");
+    }
+
+    @RequestMapping(value = "/twilio-status", method = {RequestMethod.GET, RequestMethod.POST})
+    @Operation(summary = "Capturar cambios de estado de Twilio", description = "Procesa los eventos de estado de la llamada enviados por Twilio.")
+    public void handleTwilioStatus(
+            @RequestParam("CallSid") String callSid,
+            @RequestParam("CallStatus") String callStatus,
+            @RequestParam(value = "CallDuration", required = false) String duration) {
+        ivrService.handleTwilioStatus(callSid, callStatus, duration);
+    }
+
+    @PostMapping("/outbound")
+    @Operation(summary = "Iniciar llamada saliente real o simulada", description = "Inicia una llamada real a través de Twilio, o una simulación interactiva si mock=true.")
+    public IvrResponse triggerOutboundCall(
+            @Valid @RequestBody CallRequest request,
+            @RequestParam(value = "mock", required = false, defaultValue = "false") boolean forceMock) {
+        return ivrService.triggerOutboundCall(request.getFrom(), forceMock);
     }
 
     @GetMapping("/calls/live")

@@ -11,4 +11,6 @@ public class TwilioProperties {
     private String accountSid;
     private String authToken;
     private String phoneNumber;
+    private String webhookUrl;
 }
+
