@@ -22,6 +22,7 @@ public class PaymentService {
     private final PaymentGatewaySimulator paymentGatewaySimulator;
     private final UserServiceClient userServiceClient;
     private final NotificationServiceClient notificationServiceClient;
+    private final CurrencyExchangeService currencyExchangeService;
 
     private final com.voicepay.payment.security.JwtUtil jwtUtil;
 
@@ -51,7 +52,7 @@ public class PaymentService {
         
         BigDecimal totalAmount = paymentRepository.findAll().stream()
                 .filter(p -> p.getStatus() == Payment.PaymentStatus.COMPLETED)
-                .map(Payment::getAmount)
+                .map(p -> p.getConvertedAmount() != null ? p.getConvertedAmount() : p.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return PaymentStats.builder()
@@ -70,6 +71,12 @@ public class PaymentService {
             throw new RuntimeException("Validation failed: User does not exist or User Service is down.");
         }
 
+        // Calcular tasa de cambio y monto convertido a la divisa base (EUR)
+        BigDecimal rate = currencyExchangeService.getRate(payment.getCurrency());
+        BigDecimal convertedAmount = currencyExchangeService.convert(payment.getAmount(), payment.getCurrency(), "EUR");
+        payment.setExchangeRate(rate);
+        payment.setConvertedAmount(convertedAmount);
+
         // Simplemente guardamos el pago como PENDING para que el IVR lo gestione
         payment.setStatus(Payment.PaymentStatus.PENDING);
         return paymentRepository.save(payment);
@@ -83,13 +90,18 @@ public class PaymentService {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("No pending payment found for user: " + userId));
 
-        // Llamamos al simulador de la pasarela
-        boolean success = paymentGatewaySimulator.processPayment(pendingPayment.getAmount());
+        // Llamamos al simulador de la pasarela indicando la divisa correspondiente
+        boolean success = paymentGatewaySimulator.processPayment(pendingPayment.getAmount(), pendingPayment.getCurrency());
 
         if (success) {
             pendingPayment.setStatus(Payment.PaymentStatus.COMPLETED);
             pendingPayment.setTransactionId("TX-" + System.currentTimeMillis()); // 🆔 Generamos el ID aquí
-            sendNotification(pendingPayment, "¡Pago completado! Se han cargado " + pendingPayment.getAmount() + " " + pendingPayment.getCurrency() + " a su cuenta.");
+            
+            String notifMsg = "¡Pago completado! Se han cargado " + pendingPayment.getAmount() + " " + pendingPayment.getCurrency() + " a su cuenta.";
+            if (!"EUR".equalsIgnoreCase(pendingPayment.getCurrency()) && pendingPayment.getConvertedAmount() != null) {
+                notifMsg += " (Equivalente a " + pendingPayment.getConvertedAmount() + " EUR, Tasa: " + pendingPayment.getExchangeRate() + ")";
+            }
+            sendNotification(pendingPayment, notifMsg);
         } else {
             pendingPayment.setStatus(Payment.PaymentStatus.FAILED);
             pendingPayment.setTransactionId("TX-FAILED-" + System.currentTimeMillis());

@@ -42,6 +42,9 @@ class PaymentServiceTest {
     @Mock
     private com.voicepay.payment.security.JwtUtil jwtUtil;
 
+    @Mock
+    private CurrencyExchangeService currencyExchangeService;
+
     @InjectMocks
     private PaymentService paymentService;
 
@@ -59,6 +62,11 @@ class PaymentServiceTest {
 
         // Mock default behavior of jwtUtil
         lenient().when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("dummy-token");
+
+        // Mock default behavior of currencyExchangeService
+        lenient().when(currencyExchangeService.getRate(anyString())).thenReturn(BigDecimal.ONE);
+        lenient().when(currencyExchangeService.convert(any(), anyString(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -66,7 +74,7 @@ class PaymentServiceTest {
     void whenPaymentSucceeds_thenUpdateToCompletedAndNotify() {
         // GIVEN
         when(paymentRepository.findByUserId(100L)).thenReturn(Collections.singletonList(pendingPayment));
-        when(paymentGatewaySimulator.processPayment(any())).thenReturn(true);
+        when(paymentGatewaySimulator.processPayment(any(), any())).thenReturn(true);
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArguments()[0]);
 
         // Mock User Service Client (for the name in notification)
@@ -93,7 +101,7 @@ class PaymentServiceTest {
     void whenPaymentFails_thenUpdateToFailedAndNotify() {
         // GIVEN
         when(paymentRepository.findByUserId(100L)).thenReturn(Collections.singletonList(pendingPayment));
-        when(paymentGatewaySimulator.processPayment(any())).thenReturn(false);
+        when(paymentGatewaySimulator.processPayment(any(), any())).thenReturn(false);
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArguments()[0]);
 
         // WHEN

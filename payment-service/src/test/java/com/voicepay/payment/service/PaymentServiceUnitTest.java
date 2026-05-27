@@ -32,6 +32,12 @@ public class PaymentServiceUnitTest {
     @Mock
     private com.voicepay.payment.client.NotificationServiceClient notificationServiceClient;
 
+    @Mock
+    private CurrencyExchangeService currencyExchangeService;
+
+    @Mock
+    private com.voicepay.payment.security.JwtUtil jwtUtil;
+
     @InjectMocks
     private PaymentService paymentService;
 
@@ -47,6 +53,12 @@ public class PaymentServiceUnitTest {
 
         // Mock lenient user client to avoid NPE on notifications
         lenient().when(userServiceClient.getUserDetails(anyLong(), any())).thenReturn(java.util.Map.of("name", "Usuario"));
+
+        // Mock lenient behavior for jwtUtil and currencyExchangeService
+        lenient().when(jwtUtil.generateToken(any(), any())).thenReturn("mocked-token");
+        lenient().when(currencyExchangeService.getRate(any())).thenReturn(BigDecimal.ONE);
+        lenient().when(currencyExchangeService.convert(any(), any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -55,7 +67,7 @@ public class PaymentServiceUnitTest {
         // Decimos: "Cuando busques por el ID 3, devuelve una lista con nuestro pago pendiente"
         when(paymentRepository.findByUserId(3L)).thenReturn(List.of(pendingPayment));
         // Decimos: "Cuando el banco procese el pago, di que ha tenido éxito"
-        when(paymentGatewaySimulator.processPayment(any())).thenReturn(true);
+        when(paymentGatewaySimulator.processPayment(any(), any())).thenReturn(true);
         // Decimos: "Cuando guardes el resultado, simplemente devuelve lo que recibas"
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArguments()[0]);
 
@@ -67,7 +79,7 @@ public class PaymentServiceUnitTest {
         assertEquals(Payment.PaymentStatus.COMPLETED, result.getStatus());
         
         // Verificamos que se llamó al banco exactamente 1 vez
-        verify(paymentGatewaySimulator, times(1)).processPayment(any());
+        verify(paymentGatewaySimulator, times(1)).processPayment(any(), any());
         // Verificamos que se guardó en la base de datos
         verify(paymentRepository, times(1)).save(any(Payment.class));
     }

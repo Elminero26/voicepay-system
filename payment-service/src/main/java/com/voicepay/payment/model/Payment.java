@@ -32,6 +32,12 @@ public class Payment {
     @NotNull(message = "Currency is required")
     private String currency;
 
+    @Column(precision = 18, scale = 4)
+    private BigDecimal exchangeRate;
+
+    @Column(precision = 18, scale = 2)
+    private BigDecimal convertedAmount;
+
     @Convert(converter = EncryptionConverter.class)
     private String transactionId;
 

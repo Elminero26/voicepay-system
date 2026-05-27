@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +32,7 @@ public class SubscriptionService {
     private final UserServiceClient userServiceClient;
     private final NotificationServiceClient notificationServiceClient;
     private final JwtUtil jwtUtil;
+    private final CurrencyExchangeService currencyExchangeService;
 
     private HttpHeaders getHeadersWithJwt() {
         HttpHeaders headers = new HttpHeaders();
@@ -72,7 +74,13 @@ public class SubscriptionService {
         Subscription saved = subscriptionRepository.save(subscription);
 
         // Notificar creación exitosa
-        sendNotification(saved, "Su suscripción recurrente de " + saved.getAmount() + " " + saved.getCurrency() + " (" + saved.getPeriodicity() + ") ha sido activada con éxito.");
+        String msg = "Su suscripción recurrente de " + saved.getAmount() + " " + saved.getCurrency() + " (" + saved.getPeriodicity() + ") ha sido activada con éxito.";
+        if (!"EUR".equalsIgnoreCase(saved.getCurrency())) {
+            BigDecimal converted = currencyExchangeService.convert(saved.getAmount(), saved.getCurrency(), "EUR");
+            BigDecimal r = currencyExchangeService.getRate(saved.getCurrency());
+            msg += " (Aprox. " + converted + " EUR, Tasa: " + r + ")";
+        }
+        sendNotification(saved, msg);
 
         return saved;
     }
@@ -129,10 +137,14 @@ public class SubscriptionService {
             subscriptionRepository.save(sub);
 
             // Guardamos registro de pago fallido
+            BigDecimal rate = currencyExchangeService.getRate(sub.getCurrency());
+            BigDecimal convertedAmount = currencyExchangeService.convert(sub.getAmount(), sub.getCurrency(), "EUR");
             Payment failedPayment = Payment.builder()
                     .userId(sub.getUserId())
                     .amount(sub.getAmount())
                     .currency(sub.getCurrency())
+                    .exchangeRate(rate)
+                    .convertedAmount(convertedAmount)
                     .description("Cobro automático fallido: Validación de usuario falló")
                     .status(Payment.PaymentStatus.FAILED)
                     .transactionId("TX-SUB-FAIL-USER-" + System.currentTimeMillis())
@@ -142,12 +154,17 @@ public class SubscriptionService {
         }
 
         // 2. Procesar pago en la pasarela
-        boolean paymentSuccess = paymentGatewaySimulator.processPayment(sub.getAmount());
+        boolean paymentSuccess = paymentGatewaySimulator.processPayment(sub.getAmount(), sub.getCurrency());
+
+        BigDecimal rate = currencyExchangeService.getRate(sub.getCurrency());
+        BigDecimal convertedAmount = currencyExchangeService.convert(sub.getAmount(), sub.getCurrency(), "EUR");
 
         Payment payment = Payment.builder()
                 .userId(sub.getUserId())
                 .amount(sub.getAmount())
                 .currency(sub.getCurrency())
+                .exchangeRate(rate)
+                .convertedAmount(convertedAmount)
                 .description(sub.getDescription() != null ? sub.getDescription() : "Cobro periódico de suscripción")
                 .build();
 
@@ -163,7 +180,11 @@ public class SubscriptionService {
             paymentRepository.save(payment);
             subscriptionRepository.save(sub);
 
-            sendNotification(sub, "Cobro automático realizado con éxito. Se cargaron " + sub.getAmount() + " " + sub.getCurrency() + " a su cuenta por su suscripción activa.");
+            String notifMsg = "Cobro automático realizado con éxito. Se cargaron " + sub.getAmount() + " " + sub.getCurrency() + " a su cuenta por su suscripción activa.";
+            if (!"EUR".equalsIgnoreCase(sub.getCurrency())) {
+                notifMsg += " (Equivalente a " + convertedAmount + " EUR, Tasa: " + rate + ")";
+            }
+            sendNotification(sub, notifMsg);
         } else {
             log.warn("Recurring payment failed for subscription ID: {}", sub.getId());
             payment.setStatus(Payment.PaymentStatus.FAILED);
@@ -176,7 +197,11 @@ public class SubscriptionService {
             paymentRepository.save(payment);
             subscriptionRepository.save(sub);
 
-            sendNotification(sub, "ATENCIÓN: El cobro automático de su suscripción por " + sub.getAmount() + " " + sub.getCurrency() + " ha fallado. Por favor, revise sus métodos de pago.");
+            String notifMsg = "ATENCIÓN: El cobro automático de su suscripción por " + sub.getAmount() + " " + sub.getCurrency() + " ha fallado. Por favor, revise sus métodos de pago.";
+            if (!"EUR".equalsIgnoreCase(sub.getCurrency())) {
+                notifMsg += " (Cobro intentado por " + sub.getAmount() + " " + sub.getCurrency() + ", Equivalente a " + convertedAmount + " EUR)";
+            }
+            sendNotification(sub, notifMsg);
         }
     }
 

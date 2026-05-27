@@ -45,6 +45,9 @@ public class SubscriptionServiceUnitTest {
     @Mock
     private JwtUtil jwtUtil;
 
+    @Mock
+    private CurrencyExchangeService currencyExchangeService;
+
     @InjectMocks
     private SubscriptionService subscriptionService;
 
@@ -64,6 +67,11 @@ public class SubscriptionServiceUnitTest {
                 .build();
 
         lenient().when(jwtUtil.generateToken(any(), any())).thenReturn("mocked-token");
+
+        // Mock default behavior of currencyExchangeService
+        lenient().when(currencyExchangeService.getRate(anyString())).thenReturn(BigDecimal.ONE);
+        lenient().when(currencyExchangeService.convert(any(), anyString(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -111,7 +119,7 @@ public class SubscriptionServiceUnitTest {
         when(subscriptionRepository.findByStatusAndNextPaymentDateBefore(any(), any()))
                 .thenReturn(List.of(activeSubscription));
         when(userServiceClient.validateUser(anyLong(), any())).thenReturn(new Object());
-        when(paymentGatewaySimulator.processPayment(any())).thenReturn(true);
+        when(paymentGatewaySimulator.processPayment(any(), any())).thenReturn(true);
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArguments()[0]);
         when(subscriptionRepository.save(any(Subscription.class))).thenAnswer(i -> i.getArguments()[0]);
 

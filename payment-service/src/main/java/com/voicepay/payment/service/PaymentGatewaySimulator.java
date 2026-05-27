@@ -13,12 +13,20 @@ public class PaymentGatewaySimulator {
     private final Random random = new Random();
 
     /**
-     * Simula el procesamiento de un pago a través de una pasarela externa (Stripe, PayPal, etc.)
-     * @param amount Monto a procesar
-     * @return true si el pago fue exitoso, false en caso contrario
+     * Simula el procesamiento de un pago en una divisa específica.
      */
     public boolean processPayment(BigDecimal amount) {
-        log.info("Iniciando comunicación con la pasarela de pago para un monto de: {} EUR", amount);
+        return processPayment(amount, "EUR");
+    }
+
+    /**
+     * Simula el procesamiento de un pago a través de una pasarela externa (Stripe, PayPal, etc.)
+     * @param amount Monto a procesar
+     * @param currency Divisa del pago
+     * @return true si el pago fue exitoso, false en caso contrario
+     */
+    public boolean processPayment(BigDecimal amount, String currency) {
+        log.info("Iniciando comunicación con la pasarela de pago para un monto de: {} {}", amount, currency);
         
         try {
             // Simulamos latencia de red (500ms - 1500ms)

@@ -56,3 +56,4 @@ public class SubscriptionController {
         return ResponseEntity.ok("Procesamiento de suscripciones vencidas ejecutado correctamente.");
     }
 }
+// Fin del controlador de suscripciones

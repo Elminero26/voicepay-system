@@ -18,6 +18,7 @@ import java.util.List;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final com.voicepay.payment.service.CurrencyExchangeService currencyExchangeService;
 
     @GetMapping
     @Operation(summary = "Obtener todos los pagos", description = "Devuelve el historial completo de pagos registrados.")
@@ -68,5 +69,40 @@ public class PaymentController {
     @Operation(summary = "Obtener pago por ID", description = "Busca y devuelve los detalles de un pago específico.")
     public Payment getPaymentById(@PathVariable Long id) {
         return paymentService.getPaymentById(id);
+    }
+
+    @GetMapping("/exchange-rates")
+    @Operation(summary = "Obtener tipos de cambio", description = "Devuelve los tipos de cambio en tiempo real respecto al EUR y la última fecha de actualización.")
+    public java.util.Map<String, Object> getExchangeRates() {
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("base", "EUR");
+        response.put("rates", currencyExchangeService.getExchangeRates());
+        response.put("lastUpdated", currencyExchangeService.getLastUpdated());
+        return response;
+    }
+
+    @GetMapping("/exchange-rates/convert")
+    @Operation(summary = "Convertir importe", description = "Convierte un importe entre dos divisas gestionando la precisión monetaria.")
+    public java.util.Map<String, Object> convertCurrency(
+            @RequestParam java.math.BigDecimal amount,
+            @RequestParam String from,
+            @RequestParam String to) {
+        java.math.BigDecimal converted = currencyExchangeService.convert(amount, from, to);
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("amount", amount);
+        response.put("from", from.toUpperCase());
+        response.put("to", to.toUpperCase());
+        response.put("convertedAmount", converted);
+        response.put("rate", currencyExchangeService.getRate(from).compareTo(java.math.BigDecimal.ZERO) > 0 
+                ? currencyExchangeService.getRate(to).divide(currencyExchangeService.getRate(from), 4, java.math.RoundingMode.HALF_UP) 
+                : java.math.BigDecimal.ONE);
+        return response;
+    }
+
+    @PostMapping("/exchange-rates/update")
+    @Operation(summary = "Actualizar tipos de cambio", description = "Fuerza la actualización manual de los tipos de cambio de divisas en tiempo real desde la API FX.")
+    public java.util.Map<String, Object> updateExchangeRates() {
+        currencyExchangeService.updateExchangeRates();
+        return getExchangeRates();
     }
 }
