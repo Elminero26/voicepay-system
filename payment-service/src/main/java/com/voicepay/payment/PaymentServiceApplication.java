@@ -9,8 +9,11 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.voicepay.payment.config.AppProperties;
 
+import org.springframework.scheduling.annotation.EnableScheduling;
+
 @SpringBootApplication
 @EnableConfigurationProperties(AppProperties.class)
+@EnableScheduling
 public class PaymentServiceApplication implements WebMvcConfigurer {
     public static void main(String[] args) {
         SpringApplication.run(PaymentServiceApplication.class, args);
