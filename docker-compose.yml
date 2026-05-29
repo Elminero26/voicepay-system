@@ -1,6 +1,138 @@
 version: '3.8'
 
 services:
+  # --- Database ---
+  voicepay-postgres:
+    image: postgres:16-alpine
+    container_name: voicepay-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=ToPo12345@
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voicepay-network
+
+  # --- Microservices ---
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    container_name: voicepay-user-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_user
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
+      - LOGSTASH_HOST=logstash
+    depends_on:
+      voicepay-postgres:
+        condition: service_healthy
+    networks:
+      - voicepay-network
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    container_name: voicepay-payment-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_payment
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
+      - USER_SERVICE_URL=http://user-service:8080/users
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8083/notifications
+      - LOGSTASH_HOST=logstash
+    depends_on:
+      voicepay-postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - voicepay-network
+
+  ivr-service:
+    build:
+      context: .
+      dockerfile: ivr-service/Dockerfile
+    container_name: voicepay-ivr-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_ivr
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
+      - USER_SERVICE_URL=http://user-service:8080/users
+      - PAYMENT_SERVICE_URL=http://payment-service:8081/payments
+      - LOGSTASH_HOST=logstash
+    depends_on:
+      voicepay-postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+    networks:
+      - voicepay-network
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: voicepay-notification-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_notification
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
+      - LOGSTASH_HOST=logstash
+    depends_on:
+      voicepay-postgres:
+        condition: service_healthy
+    networks:
+      - voicepay-network
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
+    container_name: voicepay-gateway-service
+    ports:
+      - "9000:9000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8080
+      - PAYMENT_SERVICE_URL=http://payment-service:8081
+      - IVR_SERVICE_URL=http://ivr-service:8082
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8083
+      - LOGSTASH_HOST=logstash
+    depends_on:
+      user-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      ivr-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - voicepay-network
+
+  # --- Infrastructure & Monitoring ---
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
     container_name: voicepay-elasticsearch
@@ -76,6 +208,8 @@ services:
 
 volumes:
   elasticsearch-data:
+    driver: local
+  postgres-data:
     driver: local
 
 networks:
