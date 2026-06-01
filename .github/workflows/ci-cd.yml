@@ -1,0 +1,166 @@
+name: VoicePay System CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # =========================================================================
+  # 1. CONTINUOUS INTEGRATION: Automated Tests & Compilation
+  # =========================================================================
+  test:
+    name: Run Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Grant Execute Permission to Maven Wrapper
+        run: chmod +x mvnw
+
+      - name: Run Maven Tests
+        run: ./mvnw clean test
+
+  # =========================================================================
+  # 2. CONTINUOUS DELIVERY: Parallelized Docker Builds
+  # =========================================================================
+  build-docker:
+    name: Build & Push Docker Images
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway-service
+          - user-service
+          - payment-service
+          - ivr-service
+          - notification-service
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Service Name in Lowercase
+        id: prep
+        run: |
+          # Convert repository owner to lowercase for registry path requirements
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner_lc=${OWNER_LC}" >> $GITHUB_OUTPUT
+
+      - name: Build & Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ steps.prep.outputs.owner_lc }}/voicepay-${{ matrix.service }}:latest
+            ghcr.io/${{ steps.prep.outputs.owner_lc }}/voicepay-${{ matrix.service }}:${{ github.sha }}
+
+  # =========================================================================
+  # 3. CONTINUOUS DEPLOYMENT: Kubernetes Rolling Deployments
+  # =========================================================================
+  deploy:
+    name: Continuous Deployment (K8s)
+    needs: build-docker
+    runs-on: ubuntu-latest
+    # Run CD only on commits to main/master (not on pull requests)
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Extract Repo Owner in Lowercase
+        id: prep
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner_lc=${OWNER_LC}" >> $GITHUB_OUTPUT
+
+      - name: Update Kubernetes Manifests with Tagged Images
+        run: |
+          echo "Updating deployment image references in manifests..."
+          for service in gateway-service user-service payment-service ivr-service notification-service; do
+            sed -i "s|image: localhost/voicepay/${service}:latest|image: ghcr.io/${{ steps.prep.outputs.owner_lc }}/voicepay-${service}:${{ github.sha }}|g" kubernetes/${service}.yaml
+          done
+          echo "Successfully updated image tags in all Kubernetes files."
+
+      - name: Validate Kubernetes Manifests (Dry-Run)
+        run: |
+          echo "Performing syntax and structure dry-run validation..."
+          kubectl apply --dry-run=client -R -f kubernetes/
+
+      - name: Deploy to Kubernetes Cluster
+        env:
+          KUBECONFIG_SECRET: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -z "$KUBECONFIG_SECRET" ]; then
+            echo "::warning::KUBECONFIG secret is not defined in GitHub Secrets. Skipping live cluster deployment."
+            echo "----------------------------------------------------------------------------------------------------"
+            echo "Continuous Deployment validation completed successfully! All manifests are healthy."
+            echo "To enable live continuous deployment to your cluster, perform the following steps:"
+            echo "  1. Obtain your Kubernetes cluster's Kubeconfig file."
+            echo "  2. Go to your GitHub repository: Settings -> Secrets and variables -> Actions."
+            echo "  3. Create a new Repository Secret named 'KUBECONFIG'."
+            echo "  4. Paste the content of your Kubeconfig file as the secret's value."
+            echo "  5. Re-run or trigger this workflow. The pipeline will automatically apply the changes."
+            echo "----------------------------------------------------------------------------------------------------"
+          else
+            echo "KUBECONFIG secret detected. Initiating rolling deployment to cluster..."
+            
+            # Setup Kubeconfig directory and write the secret
+            mkdir -p ~/.kube
+            echo "$KUBECONFIG_SECRET" > ~/.kube/config
+            
+            # Apply all namespace, configmap, secrets and services first
+            kubectl apply -f kubernetes/namespace.yaml
+            kubectl apply -f kubernetes/secrets.yaml
+            kubectl apply -f kubernetes/configmap.yaml
+            
+            # Apply main service deployments
+            kubectl apply -R -f kubernetes/
+            
+            # Verify and wait for successful rolling updates
+            echo "Verifying service rollouts..."
+            for service in gateway-service user-service payment-service ivr-service notification-service; do
+              kubectl rollout status deployment/${service} -n voicepay --timeout=120s
+            done
+            
+            echo "Rolling deployment completed successfully!"
+          fi
