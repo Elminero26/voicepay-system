@@ -11,6 +11,7 @@
 *.ear
 *.zip
 *.tar.gz
+*.tar
 *.rar
 
 # Maven

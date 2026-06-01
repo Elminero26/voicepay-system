@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: user-service
-          image: voicepay/user-service:latest
+          image: localhost/voicepay/user-service:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

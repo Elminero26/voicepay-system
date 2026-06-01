@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: ivr-service
-          image: voicepay/ivr-service:latest
+          image: localhost/voicepay/ivr-service:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8082

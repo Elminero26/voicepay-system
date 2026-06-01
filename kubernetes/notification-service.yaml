@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: notification-service
-          image: voicepay/notification-service:latest
+          image: localhost/voicepay/notification-service:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8083

@@ -25,8 +25,9 @@ public class JwtGatewayFilter implements WebFilter {
 
         // Permitir rutas públicas y WebSockets
         if (path.startsWith("/auth") || path.startsWith("/login") || path.startsWith("/oauth2") || 
-            path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs") || 
-            path.startsWith("/h2-console") || path.startsWith("/ws")) {
+            path.startsWith("/actuator") || path.startsWith("/swagger-ui") || 
+            path.startsWith("/v3/api-docs") || path.startsWith("/h2-console") || 
+            path.startsWith("/ws")) {
             return chain.filter(exchange);
         }
 

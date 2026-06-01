@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: payment-service
-          image: voicepay/payment-service:latest
+          image: localhost/voicepay/payment-service:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
