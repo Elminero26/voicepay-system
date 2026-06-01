@@ -71,6 +71,22 @@ public class IvrController {
         return ivrService.triggerOutboundCall(request.getFrom(), forceMock);
     }
 
+    @GetMapping("/flow")
+    @Operation(summary = "Obtener configuración del flujo IVR", description = "Recupera la estructura JSON (nodos y enlaces) del árbol de decisión del IVR.")
+    public com.voicepay.ivr.dto.IvrFlowConfig getFlowConfig() {
+        return ivrService.getFlowConfig();
+    }
+
+    @PostMapping("/flow")
+    @Operation(summary = "Guardar configuración del flujo IVR", description = "Persiste la estructura JSON del árbol de decisión del IVR en la base de datos.")
+    public com.voicepay.ivr.dto.IvrFlowConfig saveFlowConfig(@RequestBody java.util.Map<String, String> payload) {
+        String flowJson = payload.get("flowJson");
+        if (flowJson == null) {
+            throw new IllegalArgumentException("El campo 'flowJson' es requerido.");
+        }
+        return ivrService.saveFlowConfig(flowJson);
+    }
+
     @GetMapping("/calls/live")
     @Operation(summary = "Obtener llamadas en vivo", description = "Devuelve el estado actual de todas las llamadas en progreso en el sistema IVR.")
     public java.util.Collection<com.voicepay.ivr.dto.LiveCall> getLiveCalls() {

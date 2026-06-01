@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ivr-service
+  namespace: voicepay
+  labels:
+    app: ivr-service
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ivr-service
+  template:
+    metadata:
+      labels:
+        app: ivr-service
+    spec:
+      containers:
+        - name: ivr-service
+          image: voicepay/ivr-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: voicepay-configmap
+                  key: SPRING_DATASOURCE_URL_IVR
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: voicepay-secrets
+                  key: postgres-username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voicepay-secrets
+                  key: postgres-password
+            - name: USER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: voicepay-configmap
+                  key: USER_SERVICE_URL_USERS
+            - name: PAYMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: voicepay-configmap
+                  key: PAYMENT_SERVICE_URL_PAYMENTS
+            - name: LOGSTASH_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: voicepay-configmap
+                  key: LOGSTASH_HOST
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ivr-service
+  namespace: voicepay
+  labels:
+    app: ivr-service
+spec:
+  ports:
+    - port: 8082
+      targetPort: 8082
+      name: http
+  selector:
+    app: ivr-service
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ivr-service-hpa
+  namespace: voicepay
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ivr-service
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

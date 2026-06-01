@@ -29,6 +29,7 @@ public class IvrService {
     private final PaymentServiceClient paymentServiceClient;
     private final LiveCallBroadcaster broadcaster;
     private final com.voicepay.ivr.repository.LiveCallRepository callRepository;
+    private final com.voicepay.ivr.repository.IvrFlowConfigRepository flowConfigRepository;
     private final com.voicepay.ivr.config.TwilioProperties twilioProperties;
     private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -97,8 +98,11 @@ public class IvrService {
                 callRepository.save(call); // 💾 Guardamos en PostgreSQL
                 broadcaster.broadcast(liveCalls.values());
 
+                String promptTemplate = getVoicePromptFromConfig("3", "Bienvenido {name}. Usted tiene un pago pendiente de {amount} euros. Pulse 1 para pagar, o pulse 2 para hablar con un agente.");
+                String dynamicMessage = promptTemplate.replace("{name}", name).replace("{amount}", amount.toString());
+
                 return IvrResponse.builder()
-                        .message("Bienvenido " + name + ". Usted tiene un pago pendiente de " + amount + " euros. Pulse 1 para pagar, o pulse 2 para hablar con un agente.")
+                        .message(dynamicMessage)
                         .nextAction("WAIT_FOR_INPUT")
                         .userId(userId)
                         .build();
@@ -143,8 +147,9 @@ public class IvrService {
                 callRepository.save(activeCall);
                 broadcaster.broadcast(liveCalls.values());
             }
+            String promptTemplate = getVoicePromptFromConfig("6", "Un momento, por favor. Le estamos transfiriendo con el próximo agente disponible.");
             return IvrResponse.builder()
-                    .message("Un momento, por favor. Le estamos transfiriendo con el próximo agente disponible.")
+                    .message(promptTemplate)
                     .nextAction("TRANSFER")
                     .build();
         } else if ("1".equals(digits)) {
@@ -184,8 +189,11 @@ public class IvrService {
                 }, 5000);
             }
 
+            String promptTemplate = getVoicePromptFromConfig("5", "Gracias. Su pago ha sido procesado correctamente. Le hemos enviado un mensaje de confirmación a su móvil. ¡Adiós!");
+            String dynamicMessage = promptTemplate.replace("{name}", activeCall != null ? activeCall.getUserName() : "Cliente").replace("{amount}", activeCall != null ? String.valueOf(activeCall.getCallAmount()) : "0");
+
             return IvrResponse.builder()
-                    .message("Gracias. Su pago ha sido procesado correctamente. Le hemos enviado un mensaje de confirmación a su móvil. ¡Adiós!")
+                    .message(dynamicMessage)
                     .nextAction("HANGUP")
                     .build();
         } catch (Exception e) {
@@ -270,14 +278,23 @@ public class IvrService {
             callRepository.save(call);
             broadcaster.broadcast(liveCalls.values());
 
-            // Generamos TwiML
+            // Generamos TwiML dinámico
+            String welcomeTemplate = getVoicePromptFromConfig("1", "Hola {name}. Bienvenido a Voice Pay.");
+            String welcomePrompt = welcomeTemplate.replace("{name}", name).replace("{amount}", amountStr);
+
+            String queryTemplate = getVoicePromptFromConfig("3", "Usted tiene un pago pendiente de {amount} euros.");
+            String queryPrompt = queryTemplate.replace("{name}", name).replace("{amount}", amountStr);
+
+            String gatherTemplate = getVoicePromptFromConfig("4", "Para confirmar el pago, pulse 1. Para hablar con un agente, pulse 2. Para cancelar, cuelgue.");
+            String gatherPrompt = gatherTemplate.replace("{name}", name).replace("{amount}", amountStr);
+
             return new VoiceResponse.Builder()
-                    .say(new Say.Builder("Hola " + name + ". Bienvenido a Voice Pay. Usted tiene un pago pendiente de " + amountStr + " euros.")
+                    .say(new Say.Builder(welcomePrompt + " " + queryPrompt)
                             .language(Say.Language.ES_ES).build())
                     .gather(new Gather.Builder()
                             .numDigits(1)
                             .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callSid)
-                            .say(new Say.Builder("Para confirmar el pago, pulse 1. Para hablar con un agente, pulse 2. Para cancelar, cuelgue.")
+                            .say(new Say.Builder(gatherPrompt)
                                     .language(Say.Language.ES_ES).build())
                             .build())
                     .build().toXml();
@@ -578,6 +595,80 @@ public class IvrService {
                     .userId(userId)
                     .build();
         }
+    }
+
+    private static final String DEFAULT_FLOW_JSON = "{\"nodes\":[" +
+            "{\"id\":\"1\",\"type\":\"ivrNode\",\"position\":{\"x\":250,\"y\":50},\"data\":{\"label\":\"Incoming Call\",\"description\":\"User dials the IVR system\",\"status\":\"pending\",\"icon\":\"PhoneCall\",\"voicePrompt\":\"Bienvenido al sistema de pagos automáticos VoicePay. Por favor, espere mientras le identificamos.\",\"apiEndpoint\":\"https://api.voicepay.com/v1/ivr/welcome\"}}," +
+            "{\"id\":\"2\",\"type\":\"ivrNode\",\"position\":{\"x\":250,\"y\":180},\"data\":{\"label\":\"Authentication\",\"description\":\"Identifying user by phone\",\"status\":\"pending\",\"icon\":\"ShieldCheck\",\"voicePrompt\":\"Para garantizar su seguridad, estamos verificando el número de teléfono desde el que nos llama.\",\"apiEndpoint\":\"https://api.voicepay.com/v1/users/verify\"}}," +
+            "{\"id\":\"3\",\"type\":\"ivrNode\",\"position\":{\"x\":250,\"y\":310},\"data\":{\"label\":\"Payment Inquiry\",\"description\":\"Checking pending amount\",\"status\":\"pending\",\"icon\":\"CreditCard\",\"voicePrompt\":\"Hemos detectado una factura pendiente de {amount} euros. Pulse uno para proceder con el pago seguro con tarjeta, o pulse dos si prefiere ser atendido por un agente.\",\"apiEndpoint\":\"https://api.voicepay.com/v1/payments/inquiry\"}}," +
+            "{\"id\":\"4\",\"type\":\"ivrNode\",\"position\":{\"x\":250,\"y\":440},\"data\":{\"label\":\"User Selection\",\"description\":\"Waiting for DTMF (1 or 2)\",\"status\":\"pending\",\"icon\":\"User\",\"voicePrompt\":\"Esperando su selección. Marque uno para pagar, o dos para soporte.\",\"apiEndpoint\":\"https://api.voicepay.com/v1/ivr/selection\"}}," +
+            "{\"id\":\"5\",\"type\":\"ivrNode\",\"position\":{\"x\":50,\"y\":580},\"data\":{\"label\":\"Payment Status\",\"description\":\"Final transaction result\",\"status\":\"pending\",\"icon\":\"CheckCircle2\",\"voicePrompt\":\"Su pago de {amount} euros ha sido procesado y aprobado correctamente. Muchas gracias por utilizar VoicePay. Hasta pronto.\",\"apiEndpoint\":\"https://api.voicepay.com/v1/payments/checkout\"}}," +
+            "{\"id\":\"6\",\"type\":\"ivrNode\",\"position\":{\"x\":450,\"y\":580},\"data\":{\"label\":\"Agent Transfer\",\"description\":\"Connecting to human agent\",\"status\":\"pending\",\"icon\":\"Headset\",\"voicePrompt\":\"Estamos transfiriendo su llamada con el siguiente agente disponible. Por favor, no cuelgue.\",\"apiEndpoint\":\"https://api.voicepay.com/v1/agents/transfer\"}}," +
+            "{\"id\":\"user-service\",\"type\":\"serviceNode\",\"position\":{\"x\":650,\"y\":180},\"data\":{\"label\":\"User Service\",\"icon\":\"User\",\"apiEndpoint\":\"https://api.voicepay.com/v1/users\"}}," +
+            "{\"id\":\"payment-service\",\"type\":\"serviceNode\",\"position\":{\"x\":650,\"y\":310},\"data\":{\"label\":\"Payment Service\",\"icon\":\"CreditCard\",\"apiEndpoint\":\"https://api.voicepay.com/v1/payments\"}}," +
+            "{\"id\":\"notification-service\",\"type\":\"serviceNode\",\"position\":{\"x\":650,\"y\":580},\"data\":{\"label\":\"Notif. Service\",\"icon\":\"Globe\",\"apiEndpoint\":\"https://api.voicepay.com/v1/notifications\"}}," +
+            "{\"id\":\"agent-service\",\"type\":\"serviceNode\",\"position\":{\"x\":650,\"y\":700},\"data\":{\"label\":\"Human Agent\",\"icon\":\"Headset\",\"apiEndpoint\":\"https://api.voicepay.com/v1/agents\"}}" +
+            "],\"edges\":[" +
+            "{\"id\":\"e1-2\",\"source\":\"1\",\"target\":\"2\",\"animated\":false,\"style\":{\"stroke\":\"#4b5563\",\"strokeWidth\":2},\"markerEnd\":{\"type\":\"arrowclosed\",\"color\":\"#4b5563\"}}," +
+            "{\"id\":\"e2-3\",\"source\":\"2\",\"target\":\"3\",\"animated\":false,\"style\":{\"stroke\":\"#4b5563\",\"strokeWidth\":2},\"markerEnd\":{\"type\":\"arrowclosed\",\"color\":\"#4b5563\"}}," +
+            "{\"id\":\"e3-4\",\"source\":\"3\",\"target\":\"4\",\"animated\":false,\"style\":{\"stroke\":\"#4b5563\",\"strokeWidth\":2},\"markerEnd\":{\"type\":\"arrowclosed\",\"color\":\"#4b5563\"}}," +
+            "{\"id\":\"e4-5\",\"source\":\"4\",\"target\":\"5\",\"label\":\"Option 1\",\"labelStyle\":{\"fill\":\"#71717a\",\"fontSize\":10,\"fontWeight\":700},\"animated\":false,\"style\":{\"stroke\":\"#4b5563\",\"strokeWidth\":2},\"markerEnd\":{\"type\":\"arrowclosed\",\"color\":\"#4b5563\"}}," +
+            "{\"id\":\"e4-6\",\"source\":\"4\",\"target\":\"6\",\"label\":\"Option 2\",\"labelStyle\":{\"fill\":\"#71717a\",\"fontSize\":10,\"fontWeight\":700},\"animated\":false,\"style\":{\"stroke\":\"#4b5563\",\"strokeWidth\":2},\"markerEnd\":{\"type\":\"arrowclosed\",\"color\":\"#4b5563\"}}," +
+            "{\"id\":\"comm-user\",\"source\":\"2\",\"target\":\"user-service\",\"animated\":false,\"style\":{\"stroke\":\"#3b82f6\",\"strokeWidth\":1,\"strokeDasharray\":\"5,5\",\"opacity\":0.3}}," +
+            "{\"id\":\"comm-pay\",\"source\":\"3\",\"target\":\"payment-service\",\"animated\":false,\"style\":{\"stroke\":\"#3b82f6\",\"strokeWidth\":1,\"strokeDasharray\":\"5,5\",\"opacity\":0.3}}," +
+            "{\"id\":\"comm-notif\",\"source\":\"5\",\"target\":\"notification-service\",\"animated\":false,\"style\":{\"stroke\":\"#3b82f6\",\"strokeWidth\":1,\"strokeDasharray\":\"5,5\",\"opacity\":0.3}}," +
+            "{\"id\":\"comm-agent\",\"source\":\"6\",\"target\":\"agent-service\",\"animated\":false,\"style\":{\"stroke\":\"#3b82f6\",\"strokeWidth\":1,\"strokeDasharray\":\"5,5\",\"opacity\":0.3}}" +
+            "]}";
+
+    public com.voicepay.ivr.dto.IvrFlowConfig saveFlowConfig(String flowJson) {
+        log.info("Saving IVR decision tree config...");
+        com.voicepay.ivr.dto.IvrFlowConfig config = flowConfigRepository.findById("default")
+                .orElse(com.voicepay.ivr.dto.IvrFlowConfig.builder().id("default").build());
+        config.setFlowJson(flowJson);
+        config.setUpdatedAt(java.time.LocalDateTime.now());
+        return flowConfigRepository.save(config);
+    }
+
+    public com.voicepay.ivr.dto.IvrFlowConfig getFlowConfig() {
+        log.info("Retrieving IVR decision tree config...");
+        return flowConfigRepository.findById("default")
+                .orElseGet(() -> {
+                    log.info("No saved flow config found, returning default template...");
+                    return com.voicepay.ivr.dto.IvrFlowConfig.builder()
+                            .id("default")
+                            .flowJson(DEFAULT_FLOW_JSON)
+                            .updatedAt(java.time.LocalDateTime.now())
+                            .build();
+                });
+    }
+
+    private String getVoicePromptFromConfig(String nodeId, String defaultValue) {
+        try {
+            com.voicepay.ivr.dto.IvrFlowConfig config = flowConfigRepository.findById("default").orElse(null);
+            String flowJson = config != null ? config.getFlowJson() : null;
+            if (flowJson == null) {
+                flowJson = DEFAULT_FLOW_JSON;
+            }
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(flowJson);
+            com.fasterxml.jackson.databind.JsonNode nodesArray = rootNode.get("nodes");
+            if (nodesArray != null && nodesArray.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode node : nodesArray) {
+                    if (nodeId.equals(node.get("id").asText())) {
+                        com.fasterxml.jackson.databind.JsonNode data = node.get("data");
+                        if (data != null && data.get("voicePrompt") != null) {
+                            String prompt = data.get("voicePrompt").asText();
+                            if (prompt != null && !prompt.trim().isEmpty()) {
+                                return prompt;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error reading dynamic voice prompt for node {}: {}", nodeId, e.getMessage());
+        }
+        return defaultValue;
     }
 
     public java.util.List<LiveCall> getCallHistory() {

@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: voicepay-postgres-pvc
+  namespace: voicepay
+  labels:
+    app: voicepay-postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voicepay-postgres-init
+  namespace: voicepay
+data:
+  init.sql: |
+    -- Script de inicialización para crear bases de datos múltiples en PostgreSQL
+    CREATE DATABASE voicepay_user;
+    CREATE DATABASE voicepay_payment;
+    CREATE DATABASE voicepay_ivr;
+    CREATE DATABASE voicepay_notification;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voicepay-postgres
+  namespace: voicepay
+  labels:
+    app: voicepay-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voicepay-postgres
+  template:
+    metadata:
+      labels:
+        app: voicepay-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: voicepay-secrets
+                  key: postgres-username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voicepay-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              value: postgres
+          ports:
+            - containerPort: 5432
+              name: postgres
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init-script
+              mountPath: /docker-entrypoint-initdb.d/init.sql
+              subPath: init.sql
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: voicepay-postgres-pvc
+        - name: postgres-init-script
+          configMap:
+            name: voicepay-postgres-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voicepay-postgres
+  namespace: voicepay
+  labels:
+    app: voicepay-postgres
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+  selector:
+    app: voicepay-postgres
+  type: ClusterIP
