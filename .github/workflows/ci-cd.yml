@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - master
+      - develop
   pull_request:
     branches:
       - main
       - master
+      - develop
   workflow_dispatch:
 
 permissions:
@@ -96,8 +98,8 @@ jobs:
     name: Continuous Deployment (K8s)
     needs: build-docker
     runs-on: ubuntu-latest
-    # Run CD only on commits to main/master (not on pull requests)
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # Run CD only on commits to main/master/develop (not on pull requests)
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
