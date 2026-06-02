@@ -3,6 +3,7 @@ package com.voicepay.notification.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -10,10 +11,11 @@ import java.security.Key;
 @Component
 public class JwtUtil {
 
-    private final String SECRET_KEY = "MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure";
+    @Value("${jwt.secret:MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure}")
+    private String secretKey;
 
     private Key getSigningKey() {
-        return Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
+        return Keys.hmacShaKeyFor(secretKey.getBytes());
     }
 
     public Claims extractAllClaims(String token) {

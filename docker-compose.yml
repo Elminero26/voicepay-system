@@ -22,6 +22,47 @@ services:
     networks:
       - voicepay-network
 
+  # --- Secret Management (HashiCorp Vault) ---
+  voicepay-vault:
+    image: hashicorp/vault:1.15
+    container_name: voicepay-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=my-root-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - voicepay-network
+
+  voicepay-vault-init:
+    image: hashicorp/vault:1.15
+    container_name: voicepay-vault-init
+    environment:
+      - VAULT_ADDR=http://voicepay-vault:8200
+      - VAULT_TOKEN=my-root-token
+    entrypoint: >
+      sh -c "
+      sleep 2;
+      vault kv put secret/user-service app.encryption-key=v0ic3P4yS3cur3Key2026Encryption! jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure google.client-secret=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 microsoft.client-secret=YOUR_MICROSOFT_CLIENT_SECRET spring.datasource.password=ToPo12345@;
+      vault kv put secret/payment-service app.encryption-key=v0ic3P4yS3cur3Key2026Encryption! jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@;
+      vault kv put secret/ivr-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@ twilio.auth-token=TOKEN_PLACEHOLDER;
+      vault kv put secret/notification-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@;
+      vault kv put secret/gateway-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure;
+      echo 'Vault initialization complete';
+      "
+    depends_on:
+      voicepay-vault:
+        condition: service_healthy
+    networks:
+      - voicepay-network
+
   # --- Microservices ---
   user-service:
     build:
@@ -33,14 +74,15 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_user
       - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
       - LOGSTASH_HOST=logstash
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}
-      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}
+      - VAULT_URI=http://voicepay-vault:8200
+      - VAULT_TOKEN=my-root-token
     depends_on:
       voicepay-postgres:
+        condition: service_healthy
+      voicepay-vault:
         condition: service_healthy
     networks:
       - voicepay-network
@@ -55,12 +97,15 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_payment
       - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
       - USER_SERVICE_URL=http://user-service:8080/users
       - NOTIFICATION_SERVICE_URL=http://notification-service:8083/notifications
       - LOGSTASH_HOST=logstash
+      - VAULT_URI=http://voicepay-vault:8200
+      - VAULT_TOKEN=my-root-token
     depends_on:
       voicepay-postgres:
+        condition: service_healthy
+      voicepay-vault:
         condition: service_healthy
       user-service:
         condition: service_started
@@ -79,12 +124,15 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_ivr
       - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
       - USER_SERVICE_URL=http://user-service:8080/users
       - PAYMENT_SERVICE_URL=http://payment-service:8081/payments
       - LOGSTASH_HOST=logstash
+      - VAULT_URI=http://voicepay-vault:8200
+      - VAULT_TOKEN=my-root-token
     depends_on:
       voicepay-postgres:
+        condition: service_healthy
+      voicepay-vault:
         condition: service_healthy
       user-service:
         condition: service_started
@@ -103,10 +151,13 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://voicepay-postgres:5432/voicepay_notification
       - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=ToPo12345@
       - LOGSTASH_HOST=logstash
+      - VAULT_URI=http://voicepay-vault:8200
+      - VAULT_TOKEN=my-root-token
     depends_on:
       voicepay-postgres:
+        condition: service_healthy
+      voicepay-vault:
         condition: service_healthy
     networks:
       - voicepay-network
@@ -124,6 +175,8 @@ services:
       - IVR_SERVICE_URL=http://ivr-service:8082
       - NOTIFICATION_SERVICE_URL=http://notification-service:8083
       - LOGSTASH_HOST=logstash
+      - VAULT_URI=http://voicepay-vault:8200
+      - VAULT_TOKEN=my-root-token
     depends_on:
       user-service:
         condition: service_started
@@ -133,6 +186,8 @@ services:
         condition: service_started
       notification-service:
         condition: service_started
+      voicepay-vault:
+        condition: service_healthy
     networks:
       - voicepay-network
 
