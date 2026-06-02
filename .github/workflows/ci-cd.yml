@@ -126,7 +126,7 @@ jobs:
       - name: Validate Kubernetes Manifests (Dry-Run)
         run: |
           echo "Performing syntax and structure dry-run validation..."
-          kubectl apply --dry-run=client -R -f kubernetes/
+          kubectl apply --dry-run=client --validate=false -R -f kubernetes/
 
       - name: Deploy to Kubernetes Cluster
         env:

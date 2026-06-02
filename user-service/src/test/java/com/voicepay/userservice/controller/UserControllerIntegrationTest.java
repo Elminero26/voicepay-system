@@ -15,7 +15,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+    "spring.datasource.driver-class-name=org.h2.Driver",
+    "spring.datasource.username=sa",
+    "spring.datasource.password=",
+    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+    "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.jpa.defer-datasource-initialization=true",
+    "spring.sql.init.mode=never",
+    "spring.security.oauth2.client.registration.google.client-id=dummy-id",
+    "spring.security.oauth2.client.registration.google.client-secret=dummy-secret",
+    "spring.security.oauth2.client.registration.google.scope=profile,email"
+})
 @AutoConfigureMockMvc(addFilters = false)
 @SuppressWarnings("null")
 public class UserControllerIntegrationTest {
