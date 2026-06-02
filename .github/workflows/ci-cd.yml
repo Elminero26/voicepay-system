@@ -109,6 +109,20 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Check Kubeconfig Presence and Configure
+        env:
+          KUBECONFIG_SECRET: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -n "$KUBECONFIG_SECRET" ]; then
+            echo "KUBECONFIG_EXISTS=true" >> $GITHUB_ENV
+            mkdir -p ~/.kube
+            echo "$KUBECONFIG_SECRET" > ~/.kube/config
+            echo "Successfully configured Kubeconfig context."
+          else
+            echo "KUBECONFIG_EXISTS=false" >> $GITHUB_ENV
+            echo "::warning::KUBECONFIG secret is not defined in GitHub Secrets. Skipping dry-run validation and deployment."
+          fi
+
       - name: Extract Repo Owner in Lowercase
         id: prep
         run: |
@@ -124,45 +138,41 @@ jobs:
           echo "Successfully updated image tags in all Kubernetes files."
 
       - name: Validate Kubernetes Manifests (Dry-Run)
+        if: env.KUBECONFIG_EXISTS == 'true'
         run: |
           echo "Performing syntax and structure dry-run validation..."
           kubectl apply --dry-run=client --validate=false -R -f kubernetes/
 
       - name: Deploy to Kubernetes Cluster
-        env:
-          KUBECONFIG_SECRET: ${{ secrets.KUBECONFIG }}
+        if: env.KUBECONFIG_EXISTS == 'true'
         run: |
-          if [ -z "$KUBECONFIG_SECRET" ]; then
-            echo "::warning::KUBECONFIG secret is not defined in GitHub Secrets. Skipping live cluster deployment."
-            echo "----------------------------------------------------------------------------------------------------"
-            echo "Continuous Deployment validation completed successfully! All manifests are healthy."
-            echo "To enable live continuous deployment to your cluster, perform the following steps:"
-            echo "  1. Obtain your Kubernetes cluster's Kubeconfig file."
-            echo "  2. Go to your GitHub repository: Settings -> Secrets and variables -> Actions."
-            echo "  3. Create a new Repository Secret named 'KUBECONFIG'."
-            echo "  4. Paste the content of your Kubeconfig file as the secret's value."
-            echo "  5. Re-run or trigger this workflow. The pipeline will automatically apply the changes."
-            echo "----------------------------------------------------------------------------------------------------"
-          else
-            echo "KUBECONFIG secret detected. Initiating rolling deployment to cluster..."
-            
-            # Setup Kubeconfig directory and write the secret
-            mkdir -p ~/.kube
-            echo "$KUBECONFIG_SECRET" > ~/.kube/config
-            
-            # Apply all namespace, configmap, secrets and services first
-            kubectl apply -f kubernetes/namespace.yaml
-            kubectl apply -f kubernetes/secrets.yaml
-            kubectl apply -f kubernetes/configmap.yaml
-            
-            # Apply main service deployments
-            kubectl apply -R -f kubernetes/
-            
-            # Verify and wait for successful rolling updates
-            echo "Verifying service rollouts..."
-            for service in gateway-service user-service payment-service ivr-service notification-service; do
-              kubectl rollout status deployment/${service} -n voicepay --timeout=120s
-            done
-            
-            echo "Rolling deployment completed successfully!"
-          fi
+          echo "KUBECONFIG secret detected. Initiating rolling deployment to cluster..."
+          
+          # Apply all namespace, configmap, secrets and services first
+          kubectl apply -f kubernetes/namespace.yaml
+          kubectl apply -f kubernetes/secrets.yaml
+          kubectl apply -f kubernetes/configmap.yaml
+          
+          # Apply main service deployments
+          kubectl apply -R -f kubernetes/
+          
+          # Verify and wait for successful rolling updates
+          echo "Verifying service rollouts..."
+          for service in gateway-service user-service payment-service ivr-service notification-service; do
+            kubectl rollout status deployment/${service} -n voicepay --timeout=120s
+          done
+          
+          echo "Rolling deployment completed successfully!"
+
+      - name: Show Deployment Instructions
+        if: env.KUBECONFIG_EXISTS == 'false'
+        run: |
+          echo "----------------------------------------------------------------------------------------------------"
+          echo "Continuous Deployment validation completed! (Skipped live cluster deployment because credentials are not set)"
+          echo "To enable live continuous deployment to your cluster, perform the following steps:"
+          echo "  1. Obtain your Kubernetes cluster's Kubeconfig file."
+          echo "  2. Go to your GitHub repository: Settings -> Secrets and variables -> Actions."
+          echo "  3. Create a new Repository Secret named 'KUBECONFIG'."
+          echo "  4. Paste the content of your Kubeconfig file as the secret's value."
+          echo "  5. Re-run or trigger this workflow. The pipeline will automatically apply the changes."
+          echo "----------------------------------------------------------------------------------------------------"
