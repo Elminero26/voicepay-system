@@ -11,9 +11,28 @@ import com.voicepay.payment.config.AppProperties;
 
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
+import io.swagger.v3.oas.annotations.info.Info;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import io.swagger.v3.oas.annotations.servers.Server;
+
 @SpringBootApplication
 @EnableConfigurationProperties(AppProperties.class)
 @EnableScheduling
+@OpenAPIDefinition(
+		info = @Info(title = "Payment Service API", version = "1.0", description = "Microservicio para la gestión de cobros, suscripciones recurrentes, conversión de divisas en tiempo real y exportación de reportes financieros firmados criptográficamente."),
+		servers = @Server(url = "${app.gateway.url:http://localhost:9000}", description = "API Gateway"),
+		security = @SecurityRequirement(name = "BearerAuth")
+)
+@SecurityScheme(
+		name = "BearerAuth",
+		type = SecuritySchemeType.HTTP,
+		scheme = "bearer",
+		bearerFormat = "JWT",
+		description = "Ingrese el token JWT obtenido del login para autenticar las peticiones."
+)
 public class PaymentServiceApplication implements WebMvcConfigurer {
     public static void main(String[] args) {
         SpringApplication.run(PaymentServiceApplication.class, args);

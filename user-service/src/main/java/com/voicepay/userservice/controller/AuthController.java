@@ -9,6 +9,8 @@ import com.voicepay.userservice.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
+@Tag(name = "Autenticación", description = "Operaciones de registro, inicio de sesión y renovación de tokens JWT")
 public class AuthController {
 
     private final UserRepository userRepository;
@@ -24,6 +27,7 @@ public class AuthController {
     private final JwtUtil jwtUtil;
 
     @PostMapping("/login")
+    @Operation(summary = "Iniciar sesión", description = "Autentica al usuario con email y contraseña, devolviendo un token de acceso JWT y un token de refresco.")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
             User user = userRepository.findByEmail(request.getEmail())
@@ -51,6 +55,7 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
+    @Operation(summary = "Renovar token de acceso", description = "Permite obtener un nuevo token de acceso JWT utilizando un token de refresco válido.")
     public ResponseEntity<?> refresh(@RequestBody RefreshTokenRequest request) {
         try {
             String refreshToken = request.getRefreshToken();
@@ -82,6 +87,7 @@ public class AuthController {
     }
 
     @PostMapping("/register")
+    @Operation(summary = "Registrar nuevo usuario", description = "Registra un nuevo usuario en el sistema con contraseña encriptada y asignación de rol por defecto (ROLE_USER).")
     public ResponseEntity<?> register(@RequestBody User user) {
         try {
             if (user.getPassword() == null || user.getPassword().isEmpty()) {

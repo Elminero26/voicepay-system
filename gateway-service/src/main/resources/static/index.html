@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoicePay System — Portal de APIs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --header-bg: rgba(15, 23, 42, 0.85);
+            --accent-primary: #6366f1;
+            --accent-secondary: #d946ef;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --tab-bg-active: rgba(99, 102, 241, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            background-color: var(--header-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #ffffff, #e2e8f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-badge {
+            background: rgba(217, 70, 239, 0.15);
+            color: var(--accent-secondary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(217, 70, 239, 0.2);
+        }
+
+        .tabs-container {
+            display: flex;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem;
+            border-radius: 12px;
+            gap: 0.25rem;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.5rem 1.25rem;
+            border-radius: 9px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .tab-btn:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .tab-btn.active {
+            color: #ffffff;
+            background: var(--tab-bg-active);
+            box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2);
+        }
+
+        .external-links {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .link-btn {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .link-btn:hover {
+            color: var(--accent-primary);
+        }
+
+        #redoc-wrapper {
+            flex: 1;
+            background-color: #0f172a;
+            position: relative;
+        }
+
+        .loader-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #0f172a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            transition: opacity 0.4s ease;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid rgba(99, 102, 241, 0.1);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Redoc customization overrides */
+        .redoc-wrap {
+            font-family: 'Outfit', sans-serif !important;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo-container">
+        <div class="logo-icon">VP</div>
+        <div class="logo-text">VoicePay System</div>
+        <div class="logo-badge">Developer Hub</div>
+    </div>
+
+    <div class="tabs-container">
+        <button class="tab-btn active" onclick="switchService('/users/v3/api-docs', this)">Usuarios & Auth</button>
+        <button class="tab-btn" onclick="switchService('/payments/v3/api-docs', this)">Pagos & Suscripciones</button>
+        <button class="tab-btn" onclick="switchService('/ivr/v3/api-docs', this)">IVR Bot</button>
+        <button class="tab-btn" onclick="switchService('/notifications/v3/api-docs', this)">Notificaciones</button>
+    </div>
+
+    <div class="external-links">
+        <a href="/swagger-ui.html" class="link-btn" target="_blank">
+            <span>Ir a Swagger UI</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
+    </div>
+</header>
+
+<main id="redoc-wrapper">
+    <div class="loader-overlay" id="loader">
+        <div class="spinner"></div>
+        <p style="color: var(--text-muted); font-size: 0.95rem; font-weight: 500;">Cargando especificación de API...</p>
+    </div>
+    <div id="redoc-container"></div>
+</main>
+
+<script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+<script>
+    const loader = document.getElementById('loader');
+
+    function switchService(url, buttonEl) {
+        // Update active tab styling
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        buttonEl.classList.add('active');
+
+        // Show loader
+        loader.style.opacity = '1';
+        loader.style.pointerEvents = 'all';
+
+        // Load docs
+        setTimeout(() => {
+            Redoc.init(url, {
+                theme: {
+                    colors: {
+                        primary: {
+                            main: '#6366f1' // Indigo accent
+                        },
+                        text: {
+                            primary: '#e2e8f0', // Slate 200
+                            secondary: '#94a3b8' // Slate 400
+                        },
+                        border: {
+                            dark: '#1e293b',
+                            light: '#334155'
+                        },
+                        responses: {
+                            success: {
+                                color: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.06)'
+                            },
+                            error: {
+                                color: '#f43f5e',
+                                backgroundColor: 'rgba(244, 63, 94, 0.06)'
+                            }
+                        }
+                    },
+                    typography: {
+                        fontFamily: 'Outfit, sans-serif',
+                        fontSize: '15px',
+                        headings: {
+                            fontFamily: 'Outfit, sans-serif',
+                            fontWeight: '600'
+                        },
+                        code: {
+                            fontFamily: 'Courier New, monospace',
+                            fontSize: '13px'
+                        }
+                    },
+                    sidebar: {
+                        backgroundColor: '#090d16',
+                        width: '260px',
+                        textColor: '#cbd5e1'
+                    },
+                    rightPanel: {
+                        backgroundColor: '#0f172a',
+                        textColor: '#cbd5e1'
+                    }
+                }
+            }, document.getElementById('redoc-container'), () => {
+                // Hide loader once done
+                loader.style.opacity = '0';
+                loader.style.pointerEvents = 'none';
+            });
+        }, 100);
+    }
+
+    // Load default service on load
+    window.addEventListener('DOMContentLoaded', () => {
+        const firstTab = document.querySelector('.tab-btn');
+        switchService('/users/v3/api-docs', firstTab);
+    });
+</script>
+</body>
+</html>

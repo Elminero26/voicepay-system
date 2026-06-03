@@ -11,14 +11,16 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 @OpenAPIDefinition(
-		info = @Info(title = "Notification Service API", version = "1.0", description = "Servicio para gestionar y enviar notificaciones"),
-		security = @SecurityRequirement(name = "X-API-KEY")
+		info = @Info(title = "Notification Service API", version = "1.0", description = "Microservicio para el envío de notificaciones por SMS, Correo Electrónico y notificaciones Push en tiempo real."),
+		servers = @io.swagger.v3.oas.annotations.servers.Server(url = "${app.gateway.url:http://localhost:9000}", description = "API Gateway"),
+		security = @SecurityRequirement(name = "BearerAuth")
 )
 @SecurityScheme(
-		name = "X-API-KEY",
-		type = SecuritySchemeType.APIKEY,
-		in = SecuritySchemeIn.HEADER,
-		paramName = "X-API-KEY"
+		name = "BearerAuth",
+		type = SecuritySchemeType.HTTP,
+		scheme = "bearer",
+		bearerFormat = "JWT",
+		description = "Ingrese el token JWT obtenido del login para autenticar las peticiones."
 )
 public class NotificationServiceApplication {
     public static void main(String[] args) {
