@@ -20,7 +20,7 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Schema(description = "Identificador único incremental del usuario", example = "1", readOnly = true)
+    @Schema(description = "Identificador único incremental del usuario", example = "1", accessMode = Schema.AccessMode.READ_ONLY)
     private Long id;
 
     @NotBlank(message = "Name is required")
@@ -40,7 +40,7 @@ public class User {
     private String phoneNumber;
 
     @Column(nullable = true)
-    @Schema(description = "Contraseña en texto plano para el registro (se guarda encriptada y no se retorna en las lecturas)", example = "richard123", writeOnly = true)
+    @Schema(description = "Contraseña en texto plano para el registro (se guarda encriptada y no se retorna en las lecturas)", example = "richard123", accessMode = Schema.AccessMode.WRITE_ONLY)
     private String password;
 
     @Column(nullable = false)

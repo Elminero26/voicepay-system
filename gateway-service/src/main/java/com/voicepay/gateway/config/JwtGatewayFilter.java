@@ -27,6 +27,7 @@ public class JwtGatewayFilter implements WebFilter {
         if (path.equals("/") || path.equals("/index.html") || 
             path.startsWith("/docs") || path.startsWith("/redoc") ||
             path.contains("/v3/api-docs") || path.startsWith("/swagger-ui") || 
+            path.startsWith("/webjars") ||
             path.startsWith("/auth") || path.startsWith("/login") || path.startsWith("/oauth2") || 
             path.startsWith("/actuator") || path.startsWith("/h2-console") || 
             path.startsWith("/ws")) {

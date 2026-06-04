@@ -16,7 +16,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public class Notification {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Schema(description = "Identificador único incremental de la notificación", example = "1", readOnly = true)
+    @Schema(description = "Identificador único incremental de la notificación", example = "1", accessMode = Schema.AccessMode.READ_ONLY)
     private Long id;
 
     @Schema(description = "Destinatario de la notificación (correo electrónico o número de teléfono)", example = "+34600123456", requiredMode = Schema.RequiredMode.REQUIRED)
