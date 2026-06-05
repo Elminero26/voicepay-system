@@ -69,4 +69,25 @@ public class PaymentServiceClient {
         fallbackResponse.put("message", "Payment service unavailable, handled by fallback.");
         return fallbackResponse;
     }
+
+    @SuppressWarnings("unchecked")
+    @CircuitBreaker(name = "paymentService", fallbackMethod = "fallbackConfirmExternalPayment")
+    @Retry(name = "paymentService")
+    public Map<String, Object> confirmExternalPayment(Long userId, String chargeSid, HttpHeaders headers) {
+        log.info("Calling Payment Service to confirm external payment of user: {} with chargeSid: {}", userId, chargeSid);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        return restTemplate.exchange(
+                paymentServiceUrl + "/external-confirm/" + userId + "?chargeSid=" + chargeSid,
+                HttpMethod.POST,
+                entity,
+                Map.class).getBody();
+    }
+
+    public Map<String, Object> fallbackConfirmExternalPayment(Long userId, String chargeSid, HttpHeaders headers, Throwable t) {
+        log.warn("Fallback triggered for confirmExternalPayment of user {} due to error: {}", userId, t.getMessage());
+        Map<String, Object> fallbackResponse = new HashMap<>();
+        fallbackResponse.put("status", "FAILED_GATEWAY");
+        fallbackResponse.put("message", "Payment service unavailable, handled by fallback.");
+        return fallbackResponse;
+    }
 }

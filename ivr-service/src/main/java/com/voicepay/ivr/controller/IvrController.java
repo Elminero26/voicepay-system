@@ -54,6 +54,18 @@ public class IvrController {
         return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "");
     }
 
+    @RequestMapping(value = "/twilio-pay-action", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
+    @Operation(summary = "Capturar retorno de Twilio Pay", description = "Procesa el resultado de la transacción realizada por Twilio Pay.")
+    public String handleTwilioPayAction(
+            @RequestParam("userId") Long userId,
+            @RequestParam("CallSid") String callSid,
+            @RequestParam("Result") String result,
+            @RequestParam(value = "PaymentStatus", required = false) String paymentStatus,
+            @RequestParam(value = "PaymentError", required = false) String paymentError,
+            @RequestParam(value = "ChargeSid", required = false) String chargeSid) {
+        return ivrService.processTwilioPayResult(userId, callSid, result, paymentStatus, paymentError, chargeSid);
+    }
+
     @RequestMapping(value = "/twilio-status", method = {RequestMethod.GET, RequestMethod.POST})
     @Operation(summary = "Capturar cambios de estado de Twilio", description = "Procesa los eventos de estado de la llamada enviados por Twilio.")
     public void handleTwilioStatus(

@@ -65,6 +65,14 @@ public class PaymentController {
         return paymentService.completePaymentByUserId(userId);
     }
 
+    @PostMapping("/external-confirm/{userId}")
+    @Operation(summary = "Confirmar pago externo (Twilio Pay)", description = "Procesa y completa el último pago pendiente de un usuario a partir de un pago procesado de forma externa.")
+    public Payment confirmExternalPayment(
+            @PathVariable Long userId,
+            @RequestParam("chargeSid") String chargeSid) {
+        return paymentService.completeExternalPayment(userId, chargeSid);
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Obtener pago por ID", description = "Busca y devuelve los detalles de un pago específico.")
     public Payment getPaymentById(@PathVariable Long id) {

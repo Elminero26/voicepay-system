@@ -10,6 +10,7 @@ import com.twilio.twiml.VoiceResponse;
 import com.twilio.twiml.voice.Say;
 import com.twilio.twiml.voice.Gather;
 import com.twilio.twiml.voice.Hangup;
+import com.twilio.twiml.voice.Pay;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -329,22 +330,39 @@ public class IvrService {
         if ("1".equals(digits) || "2".equals(digits)) {
             log.info("User selected option {} via DTMF", digits);
             
-            // Reutilizamos la lógica de confirmación existente
-            IvrResponse response = processUserOptionWithCallId(userId, digits, callId);
-            
-            // Si fue transferencia, devolvemos TwiML de transferencia (simulado con mensaje)
-            if ("2".equals(digits)) {
+            if ("1".equals(digits)) {
+                LiveCall activeCall = liveCalls.get(callId);
+                String amountStr = "25.00";
+                if (activeCall != null) {
+                    activeCall.setStatus("PROCESSING_PAYMENT");
+                    activeCall.setSelectedOption(digits);
+                    activeCall.getCallEvents().add("Usuario pulsó 1: Iniciando cobro seguro vía Twilio Pay...");
+                    amountStr = String.format(java.util.Locale.US, "%.2f", activeCall.getCallAmount());
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                }
+
+                String connectorName = "stripe_connector";
+
+                Pay pay = new Pay.Builder()
+                        .paymentConnector(connectorName)
+                        .chargeAmount(amountStr)
+                        .currency("eur")
+                        .action("/ivr/twilio-pay-action?userId=" + userId)
+                        .build();
+
                 return new VoiceResponse.Builder()
-                        .say(new Say.Builder(response.getMessage())
-                                .language(Say.Language.ES_ES).build())
-                        .hangup(new Hangup.Builder().build()) // En Twilio real aquí iría un <Dial>
+                        .pay(pay)
                         .build().toXml();
             }
+            
+            // Reutilizamos la lógica de confirmación existente para la opción 2 (transferencia)
+            IvrResponse response = processUserOptionWithCallId(userId, digits, callId);
             
             return new VoiceResponse.Builder()
                     .say(new Say.Builder(response.getMessage())
                             .language(Say.Language.ES_ES).build())
-                    .hangup(new Hangup.Builder().build())
+                    .hangup(new Hangup.Builder().build()) // En Twilio real aquí iría un <Dial>
                     .build().toXml();
         }
 
@@ -669,6 +687,74 @@ public class IvrService {
             log.error("Error reading dynamic voice prompt for node {}: {}", nodeId, e.getMessage());
         }
         return defaultValue;
+    }
+
+    public String processTwilioPayResult(Long userId, String callSid, String result, String paymentStatus, String paymentError, String chargeSid) {
+        log.info("Processing Twilio Pay result: userId={}, callSid={}, result={}, paymentStatus={}, chargeSid={}", 
+                userId, callSid, result, paymentStatus, chargeSid);
+
+        LiveCall activeCall = liveCalls.get(callSid);
+
+        if ("success".equalsIgnoreCase(result) && "complete".equalsIgnoreCase(paymentStatus)) {
+            log.info("Twilio Pay Success for User ID: {}, ChargeSid: {}", userId, chargeSid);
+
+            try {
+                paymentServiceClient.confirmExternalPayment(userId, chargeSid, getHeadersWithJwt());
+
+                if (activeCall != null) {
+                    activeCall.setStatus("COMPLETED");
+                    activeCall.getCallEvents().add("Pago seguro procesado con éxito vía Twilio Pay.");
+                    activeCall.getCallEvents().add("Stripe Charge ID: " + chargeSid);
+                    activeCall.setDuration(java.time.Duration.between(activeCall.getTimestamp(), java.time.LocalDateTime.now()).getSeconds());
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+
+                    final String sid = callSid;
+                    new java.util.Timer().schedule(new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+                            liveCalls.remove(sid);
+                            broadcaster.broadcast(liveCalls.values());
+                        }
+                    }, 5000);
+                }
+
+                String promptTemplate = getVoicePromptFromConfig("5", "Gracias. Su pago ha sido procesado correctamente. Le hemos enviado un mensaje de confirmación a su móvil. ¡Adiós!");
+                String dynamicMessage = promptTemplate.replace("{name}", activeCall != null ? activeCall.getUserName() : "Cliente").replace("{amount}", activeCall != null ? String.valueOf(activeCall.getCallAmount()) : "25");
+
+                return new VoiceResponse.Builder()
+                        .say(new Say.Builder(dynamicMessage)
+                                .language(Say.Language.ES_ES).build())
+                        .hangup(new Hangup.Builder().build())
+                        .build().toXml();
+
+            } catch (Exception e) {
+                log.error("Error confirming external payment: {}", e.getMessage());
+            }
+        }
+
+        log.warn("Twilio Pay failed or canceled. Result: {}, PaymentStatus: {}, Error: {}", result, paymentStatus, paymentError);
+        if (activeCall != null) {
+            activeCall.setStatus("FAILED");
+            activeCall.getCallEvents().add("Fallo en Twilio Pay: " + result + " (Error: " + paymentError + ")");
+            callRepository.save(activeCall);
+            broadcaster.broadcast(liveCalls.values());
+
+            final String sid = callSid;
+            new java.util.Timer().schedule(new java.util.TimerTask() {
+                @Override
+                public void run() {
+                    liveCalls.remove(sid);
+                    broadcaster.broadcast(liveCalls.values());
+                }
+            }, 5000);
+        }
+
+        return new VoiceResponse.Builder()
+                .say(new Say.Builder("Hubo un error al procesar el pago con su tarjeta. La operación ha sido cancelada. ¡Adiós!")
+                        .language(Say.Language.ES_ES).build())
+                .hangup(new Hangup.Builder().build())
+                .build().toXml();
     }
 
     public java.util.List<LiveCall> getCallHistory() {

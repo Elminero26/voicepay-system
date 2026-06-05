@@ -138,6 +138,25 @@ public class PaymentService {
         }
     }
 
+    public Payment completeExternalPayment(Long userId, String chargeSid) {
+        List<Payment> payments = paymentRepository.findByUserId(userId);
+        Payment pendingPayment = payments.stream()
+                .filter(p -> p.getStatus() == Payment.PaymentStatus.PENDING)
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No pending payment found for user: " + userId));
+
+        pendingPayment.setStatus(Payment.PaymentStatus.COMPLETED);
+        pendingPayment.setTransactionId(chargeSid);
+
+        String notifMsg = "¡Pago completado! Se han cargado " + pendingPayment.getAmount() + " " + pendingPayment.getCurrency() + " a su cuenta.";
+        if (!"EUR".equalsIgnoreCase(pendingPayment.getCurrency()) && pendingPayment.getConvertedAmount() != null) {
+            notifMsg += " (Equivalente a " + pendingPayment.getConvertedAmount() + " EUR, Tasa: " + pendingPayment.getExchangeRate() + ")";
+        }
+        sendNotification(pendingPayment, notifMsg);
+
+        return paymentRepository.save(pendingPayment);
+    }
+
     public Payment getPaymentById(Long id) {
         return paymentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Payment not found with id: " + id));

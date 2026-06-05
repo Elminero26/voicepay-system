@@ -118,21 +118,41 @@ class IvrServiceTest {
     }
 
     @Test
-    @DisplayName("handleTwilioWebhook — Should trigger confirmPayment when Digit 1 is selected")
+    @DisplayName("handleTwilioWebhook — Should return TwiML Pay when Digit 1 is selected")
     void whenTwilioWebhookDigit1_thenProcessPayment() {
         // GIVEN
         Long userId = 1L;
         String callId = "CA123456789";
         String digits = "1";
 
-        when(paymentServiceClient.confirmPayment(eq(userId), any())).thenReturn(new HashMap<>());
-
         // WHEN
         String twiml = ivrService.handleTwilioWebhook(userId, callId, digits);
 
         // THEN
+        assertThat(twiml).contains("<Pay");
+        assertThat(twiml).contains("action=\"/ivr/twilio-pay-action?userId=1\"");
+        assertThat(twiml).contains("paymentConnector=\"stripe_connector\"");
+    }
+
+    @Test
+    @DisplayName("processTwilioPayResult — Should confirm external payment on success result")
+    void whenTwilioPayResultSuccess_thenConfirmExternalPayment() {
+        // GIVEN
+        Long userId = 1L;
+        String callSid = "CA123456789";
+        String result = "success";
+        String paymentStatus = "complete";
+        String chargeSid = "ch_12345";
+
+        when(paymentServiceClient.confirmExternalPayment(eq(userId), eq(chargeSid), any())).thenReturn(new HashMap<>());
+
+        // WHEN
+        String twiml = ivrService.processTwilioPayResult(userId, callSid, result, paymentStatus, null, chargeSid);
+
+        // THEN
         assertThat(twiml).contains("procesado correctamente");
         assertThat(twiml).contains("<Hangup/>");
+        verify(paymentServiceClient, times(1)).confirmExternalPayment(eq(userId), eq(chargeSid), any());
     }
 
     @Test

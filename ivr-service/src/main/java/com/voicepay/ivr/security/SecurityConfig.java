@@ -44,7 +44,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/h2-console/**", "/swagger-ui/**", "/v3/api-docs/**", "/ivr/v3/api-docs/**", "/ws/**", "/actuator/**").permitAll()
-                .requestMatchers("/ivr/twilio-call", "/ivr/twilio-webhook", "/ivr/twilio-status", "/ivr/outbound").permitAll()
+                .requestMatchers("/ivr/twilio-call", "/ivr/twilio-webhook", "/ivr/twilio-pay-action", "/ivr/twilio-status", "/ivr/outbound").permitAll()
                 .requestMatchers("/ivr/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
                 .anyRequest().authenticated()
             )
