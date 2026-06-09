@@ -3,7 +3,6 @@ package com.voicepay.payment.model;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
-import com.voicepay.payment.security.EncryptionConverter;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -38,11 +37,11 @@ public class Payment {
     @Column(precision = 18, scale = 2)
     private BigDecimal convertedAmount;
 
-    @Convert(converter = EncryptionConverter.class)
     private String transactionId;
 
-    @Convert(converter = EncryptionConverter.class)
     private String description;
+
+    private String gatewayCustomerToken;
 
     @Enumerated(EnumType.STRING)
     @Builder.Default

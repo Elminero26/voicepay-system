@@ -46,6 +46,8 @@ public class Subscription {
 
     private String description;
 
+    private String gatewayCustomerToken;
+
     private LocalDateTime createdAt;
 
     @PrePersist

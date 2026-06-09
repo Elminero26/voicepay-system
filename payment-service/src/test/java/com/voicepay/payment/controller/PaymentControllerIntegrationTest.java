@@ -25,8 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.defer-datasource-initialization=true",
     "spring.sql.init.mode=never",
     "app.user-service.url=http://localhost:8080/users",
-    "app.notification-service.url=http://localhost:8083/notifications",
-    "app.encryption-key=v0ic3P4yS3cur3Key2026Encryption!"
+    "app.notification-service.url=http://localhost:8083/notifications"
 })
 @AutoConfigureMockMvc(addFilters = false)
 @SuppressWarnings("null")
