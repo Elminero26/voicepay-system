@@ -784,6 +784,86 @@ public class IvrService {
                 .build().toXml();
     }
 
+    public String getTwilioAuthToken() {
+        return twilioProperties.getAuthToken();
+    }
+
+    public void processPaymentCallbackAsync(Long userId, String callSid, String paymentToken) {
+        log.info("Processing Twilio Pay callback asynchronously: userId={}, callSid={}, paymentToken={}", userId, callSid, paymentToken);
+
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            Long resolvedUserId = userId;
+            String resolvedCallSid = callSid;
+
+            // 1. Si no tenemos userId, intentamos resolverlo a través de CallSid -> LiveCall -> phoneNumber -> UserService
+            if (resolvedUserId == null && resolvedCallSid != null) {
+                try {
+                    LiveCall activeCall = liveCalls.get(resolvedCallSid);
+                    if (activeCall == null) {
+                        activeCall = callRepository.findById(resolvedCallSid).orElse(null);
+                    }
+                    if (activeCall != null && activeCall.getPhoneNumber() != null) {
+                        log.info("Resolving user ID via phone number: {}", activeCall.getPhoneNumber());
+                        Map<String, Object> user = userServiceClient.getUserByPhone(activeCall.getPhoneNumber(), getHeadersWithJwt());
+                        if (user != null && user.get("id") != null) {
+                            resolvedUserId = ((Number) user.get("id")).longValue();
+                            log.info("Resolved user ID: {} for call: {}", resolvedUserId, resolvedCallSid);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to resolve user ID from CallSid {}: {}", resolvedCallSid, e.getMessage());
+                }
+            }
+
+            if (resolvedUserId == null) {
+                log.error("Cannot confirm payment: User ID is null and could not be resolved from callSid {}", resolvedCallSid);
+                updateLiveCallStatus(resolvedCallSid, "FAILED", "Error: No se pudo identificar al usuario.");
+                return;
+            }
+
+            try {
+                log.info("Calling Payment Service to confirm external payment. User ID: {}, Token: {}", resolvedUserId, paymentToken);
+                paymentServiceClient.confirmExternalPayment(resolvedUserId, paymentToken, getHeadersWithJwt());
+
+                // Actualizar llamada a COMPLETED
+                updateLiveCallStatus(resolvedCallSid, "COMPLETED", "Pago confirmado con éxito vía callback de Twilio.");
+            } catch (Exception e) {
+                log.error("Error calling Payment Service from Twilio callback: {}", e.getMessage());
+                updateLiveCallStatus(resolvedCallSid, "FAILED", "Error al confirmar el pago en pasarela externa: " + e.getMessage());
+            }
+        });
+    }
+
+    private void updateLiveCallStatus(String callSid, String status, String eventMessage) {
+        if (callSid == null) return;
+        
+        LiveCall activeCall = liveCalls.get(callSid);
+        if (activeCall == null) {
+            activeCall = callRepository.findById(callSid).orElse(null);
+        }
+        
+        if (activeCall != null) {
+            activeCall.setStatus(status);
+            activeCall.getCallEvents().add(eventMessage);
+            
+            if ("COMPLETED".equals(status) || "FAILED".equals(status)) {
+                activeCall.setDuration(java.time.Duration.between(activeCall.getTimestamp(), java.time.LocalDateTime.now()).getSeconds());
+                
+                final String sid = callSid;
+                new java.util.Timer().schedule(new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        liveCalls.remove(sid);
+                        broadcaster.broadcast(liveCalls.values());
+                    }
+                }, 5000);
+            }
+            
+            callRepository.save(activeCall);
+            broadcaster.broadcast(liveCalls.values());
+        }
+    }
+
     public java.util.List<LiveCall> getCallHistory() {
         return callRepository.findAll();
     }

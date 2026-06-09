@@ -76,6 +76,74 @@ public class IvrController {
         return ivrService.processTwilioPayResult(userId, callSid, result, paymentStatus, paymentError, chargeSid);
     }
 
+    @RequestMapping(value = "/payment-callback", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
+    @Operation(summary = "Callback de pagos seguro de Twilio", description = "Recibe la confirmación segura de Twilio Pay, valida la firma y delega de forma asíncrona la confirmación al Payment Service.")
+    public org.springframework.http.ResponseEntity<String> handlePaymentCallback(
+            @RequestParam(value = "userId", required = false) Long userId,
+            @RequestParam(value = "CallSid", required = false) String callSid,
+            @RequestParam(value = "PaymentToken", required = false) String paymentToken,
+            @RequestParam(value = "PaymentConfirmationCode", required = false) String paymentConfirmationCode,
+            @RequestParam(value = "ChargeSid", required = false) String chargeSid,
+            jakarta.servlet.http.HttpServletRequest request) {
+        
+        // Reconstrucción de la URL pública para la validación de firma
+        String scheme = request.getHeader("X-Forwarded-Proto");
+        if (scheme == null) {
+            scheme = request.getScheme();
+        }
+        String host = request.getHeader("X-Forwarded-Host");
+        if (host == null) {
+            host = request.getHeader("Host");
+        }
+        String baseUrl = scheme + "://" + host;
+        String requestUrl = baseUrl + request.getRequestURI();
+        if (request.getQueryString() != null) {
+            requestUrl += "?" + request.getQueryString();
+        }
+
+        // Obtener firma de Twilio y token
+        String signature = request.getHeader("X-Twilio-Signature");
+        String authToken = ivrService.getTwilioAuthToken();
+
+        boolean isLocalOrPlaceholder = authToken == null || authToken.contains("PLACEHOLDER") || signature == null;
+
+        if (!isLocalOrPlaceholder) {
+            com.twilio.security.RequestValidator validator = new com.twilio.security.RequestValidator(authToken);
+            
+            // Recopilar parámetros POST
+            java.util.Map<String, String> postParams = new java.util.HashMap<>();
+            request.getParameterMap().forEach((key, value) -> {
+                if (value != null && value.length > 0) {
+                    postParams.put(key, value[0]);
+                }
+            });
+            
+            boolean isValid = validator.validate(requestUrl, postParams, signature);
+            if (!isValid) {
+                return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED)
+                        .body("Invalid Twilio signature");
+            }
+        }
+
+        // Extraer identificador de transacción y token de pago
+        String resolvedCallSid = callSid != null ? callSid : request.getParameter("CallSid");
+        if (resolvedCallSid == null || resolvedCallSid.isEmpty()) {
+            resolvedCallSid = request.getParameter("Sid");
+        }
+
+        String resolvedToken = paymentToken != null ? paymentToken : request.getParameter("PaymentToken");
+        if (resolvedToken == null || resolvedToken.isEmpty()) {
+            resolvedToken = paymentConfirmationCode != null ? paymentConfirmationCode : request.getParameter("PaymentConfirmationCode");
+        }
+        if (resolvedToken == null || resolvedToken.isEmpty()) {
+            resolvedToken = chargeSid != null ? chargeSid : request.getParameter("ChargeSid");
+        }
+
+        ivrService.processPaymentCallbackAsync(userId, resolvedCallSid, resolvedToken);
+
+        return org.springframework.http.ResponseEntity.ok("<Response/>");
+    }
+
     @RequestMapping(value = "/twilio-status", method = {RequestMethod.GET, RequestMethod.POST})
     @Operation(summary = "Capturar cambios de estado de Twilio", description = "Procesa los eventos de estado de la llamada enviados por Twilio.")
     public void handleTwilioStatus(

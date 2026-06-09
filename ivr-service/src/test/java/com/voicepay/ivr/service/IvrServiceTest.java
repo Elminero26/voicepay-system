@@ -196,4 +196,78 @@ class IvrServiceTest {
         assertThat(response.getMessage()).contains("iniciada");
         assertThat(response.getNextAction()).isEqualTo("SIMULATION_RUNNING");
     }
+
+    @Test
+    @DisplayName("getTwilioAuthToken — Should return token from properties")
+    void whenGetTwilioAuthToken_thenReturnToken() {
+        when(twilioProperties.getAuthToken()).thenReturn("mock-token");
+        String token = ivrService.getTwilioAuthToken();
+        assertThat(token).isEqualTo("mock-token");
+    }
+
+    @Test
+    @DisplayName("processPaymentCallbackAsync — Should invoke confirmExternalPayment and update call status on success")
+    void whenProcessPaymentCallback_thenConfirmExternalPayment() throws Exception {
+        // GIVEN
+        Long userId = 1L;
+        String callSid = "CA123456789";
+        String token = "tok_12345";
+
+        com.voicepay.ivr.dto.LiveCall mockCall = com.voicepay.ivr.dto.LiveCall.builder()
+                .id(callSid)
+                .status("WAITING_CONFIRMATION")
+                .callEvents(new java.util.ArrayList<>())
+                .timestamp(java.time.LocalDateTime.now())
+                .build();
+        when(callRepository.findById(callSid)).thenReturn(java.util.Optional.of(mockCall));
+        when(paymentServiceClient.confirmExternalPayment(eq(userId), eq(token), any())).thenReturn(new java.util.HashMap<>());
+
+        // WHEN
+        ivrService.processPaymentCallbackAsync(userId, callSid, token);
+
+        // Wait a bit since it's asynchronous
+        Thread.sleep(150);
+
+        // THEN
+        verify(paymentServiceClient, times(1)).confirmExternalPayment(eq(userId), eq(token), any());
+        verify(callRepository, atLeastOnce()).save(any());
+        assertThat(mockCall.getStatus()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("processPaymentCallbackAsync — Should resolve userId via phone number if not provided")
+    void whenProcessPaymentCallbackWithoutUserId_thenResolveAndConfirm() throws Exception {
+        // GIVEN
+        Long userId = 1L;
+        String callSid = "CA123456789";
+        String token = "tok_12345";
+        String phone = "+34666000111";
+
+        com.voicepay.ivr.dto.LiveCall mockCall = com.voicepay.ivr.dto.LiveCall.builder()
+                .id(callSid)
+                .phoneNumber(phone)
+                .status("WAITING_CONFIRMATION")
+                .callEvents(new java.util.ArrayList<>())
+                .timestamp(java.time.LocalDateTime.now())
+                .build();
+        when(callRepository.findById(callSid)).thenReturn(java.util.Optional.of(mockCall));
+
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("id", 1);
+        userMap.put("name", "Cristian");
+        when(userServiceClient.getUserByPhone(eq(phone), any())).thenReturn(userMap);
+        when(paymentServiceClient.confirmExternalPayment(eq(userId), eq(token), any())).thenReturn(new java.util.HashMap<>());
+
+        // WHEN
+        ivrService.processPaymentCallbackAsync(null, callSid, token);
+
+        // Wait a bit since it's asynchronous
+        Thread.sleep(150);
+
+        // THEN
+        verify(userServiceClient, times(1)).getUserByPhone(eq(phone), any());
+        verify(paymentServiceClient, times(1)).confirmExternalPayment(eq(userId), eq(token), any());
+        verify(callRepository, atLeastOnce()).save(any());
+        assertThat(mockCall.getStatus()).isEqualTo("COMPLETED");
+    }
 }

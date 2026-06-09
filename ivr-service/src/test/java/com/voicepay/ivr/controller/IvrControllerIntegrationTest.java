@@ -110,6 +110,19 @@ public class IvrControllerIntegrationTest {
     }
 
     @Test
+    void handlePaymentCallback_ShouldReturnTwiML() throws Exception {
+        when(ivrService.getTwilioAuthToken()).thenReturn("DUMMY_TOKEN");
+        doNothing().when(ivrService).processPaymentCallbackAsync(anyLong(), anyString(), anyString());
+
+        mockMvc.perform(post("/ivr/payment-callback")
+                .param("userId", "3")
+                .param("CallSid", "CA123456789")
+                .param("PaymentToken", "tok_12345"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("<Response/>"));
+    }
+
+    @Test
     void triggerOutboundCall_ShouldReturnResponse() throws Exception {
         IvrResponse mockResponse = IvrResponse.builder()
                 .message("Llamada saliente iniciada.")
