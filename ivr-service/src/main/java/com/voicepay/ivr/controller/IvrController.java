@@ -50,8 +50,18 @@ public class IvrController {
     public String handleTwilioWebhook(
             @RequestParam("userId") Long userId,
             @RequestParam("callId") String callId,
-            @RequestParam(value = "Digits", required = false) String digits) {
-        return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "");
+            @RequestParam(value = "Digits", required = false) String digits,
+            jakarta.servlet.http.HttpServletRequest request) {
+        String scheme = request.getHeader("X-Forwarded-Proto");
+        if (scheme == null) {
+            scheme = request.getScheme();
+        }
+        String host = request.getHeader("X-Forwarded-Host");
+        if (host == null) {
+            host = request.getHeader("Host");
+        }
+        String baseUrl = scheme + "://" + host;
+        return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "", baseUrl);
     }
 
     @RequestMapping(value = "/twilio-pay-action", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")

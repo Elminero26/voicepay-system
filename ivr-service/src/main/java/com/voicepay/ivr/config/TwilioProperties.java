@@ -12,5 +12,6 @@ public class TwilioProperties {
     private String authToken;
     private String phoneNumber;
     private String webhookUrl;
+    private String paymentConnector = "stripe_connector";
 }
 

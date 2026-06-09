@@ -11,7 +11,9 @@ import com.twilio.twiml.voice.Say;
 import com.twilio.twiml.voice.Gather;
 import com.twilio.twiml.voice.Hangup;
 import com.twilio.twiml.voice.Pay;
+import com.twilio.twiml.voice.Prompt;
 import java.time.LocalDateTime;
+
 import java.util.UUID;
 
 import java.math.BigDecimal;
@@ -324,7 +326,7 @@ public class IvrService {
                 .build().toXml();
     }
 
-    public String handleTwilioWebhook(Long userId, String callId, String digits) {
+    public String handleTwilioWebhook(Long userId, String callId, String digits, String baseUrl) {
         log.info("Received Twilio webhook: userId={}, digits={}, callId={}", userId, digits, callId);
         
         if ("1".equals(digits) || "2".equals(digits)) {
@@ -342,13 +344,38 @@ public class IvrService {
                     broadcaster.broadcast(liveCalls.values());
                 }
 
-                String connectorName = "stripe_connector";
+                String connectorName = twilioProperties.getPaymentConnector();
+                if (connectorName == null || connectorName.isEmpty()) {
+                    connectorName = "stripe_connector";
+                }
+                String actionUrl = baseUrl + "/ivr/twilio-pay-action?userId=" + userId;
+
+                Prompt cardPrompt = new Prompt.Builder()
+                        .for_(Prompt.For.PAYMENT_CARD_NUMBER)
+                        .say(new Say.Builder("Por favor, introduzca los dieciséis dígitos de su tarjeta de crédito.")
+                                .language(Say.Language.ES_ES).build())
+                        .build();
+
+                Prompt expiryPrompt = new Prompt.Builder()
+                        .for_(Prompt.For.EXPIRATION_DATE)
+                        .say(new Say.Builder("Introduzca la fecha de caducidad con dos dígitos para el mes y dos para el año. Por ejemplo, doce veintiséis.")
+                                .language(Say.Language.ES_ES).build())
+                        .build();
+
+                Prompt cvcPrompt = new Prompt.Builder()
+                        .for_(Prompt.For.SECURITY_CODE)
+                        .say(new Say.Builder("Por favor, introduzca el código de seguridad de tres dígitos al dorso de su tarjeta.")
+                                .language(Say.Language.ES_ES).build())
+                        .build();
 
                 Pay pay = new Pay.Builder()
                         .paymentConnector(connectorName)
                         .chargeAmount(amountStr)
                         .currency("eur")
-                        .action("/ivr/twilio-pay-action?userId=" + userId)
+                        .action(actionUrl)
+                        .prompt(cardPrompt)
+                        .prompt(expiryPrompt)
+                        .prompt(cvcPrompt)
                         .build();
 
                 return new VoiceResponse.Builder()

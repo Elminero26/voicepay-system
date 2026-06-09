@@ -126,11 +126,11 @@ class IvrServiceTest {
         String digits = "1";
 
         // WHEN
-        String twiml = ivrService.handleTwilioWebhook(userId, callId, digits);
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, digits, "https://localhost:8082");
 
         // THEN
         assertThat(twiml).contains("<Pay");
-        assertThat(twiml).contains("action=\"/ivr/twilio-pay-action?userId=1\"");
+        assertThat(twiml).contains("action=\"https://localhost:8082/ivr/twilio-pay-action?userId=1\"");
         assertThat(twiml).contains("paymentConnector=\"stripe_connector\"");
     }
 
