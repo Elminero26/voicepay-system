@@ -295,6 +295,9 @@ public class IvrService {
                     .say(new Say.Builder(welcomePrompt + " " + queryPrompt)
                             .language(Say.Language.ES_ES).build())
                     .gather(new Gather.Builder()
+                            .inputs(java.util.Arrays.asList(Gather.Input.SPEECH, Gather.Input.DTMF))
+                            .language(Gather.Language.ES_ES)
+                            .speechTimeout("auto")
                             .numDigits(1)
                             .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callSid)
                             .say(new Say.Builder(gatherPrompt)
@@ -326,21 +329,54 @@ public class IvrService {
                 .build().toXml();
     }
 
-    public String handleTwilioWebhook(Long userId, String callId, String digits, String baseUrl) {
-        log.info("Received Twilio webhook: userId={}, digits={}, callId={}", userId, digits, callId);
+    public String handleTwilioWebhook(Long userId, String callId, String digits, String speechResult, String baseUrl) {
+        log.info("Received Twilio webhook: userId={}, digits={}, speechResult={}, callId={}", userId, digits, speechResult, callId);
         
-        if ("1".equals(digits) || "2".equals(digits)) {
-            log.info("User selected option {} via DTMF", digits);
+        String resolvedOption = (digits != null) ? digits.trim() : "";
+        if (resolvedOption.isEmpty() && speechResult != null && !speechResult.isEmpty()) {
+            String lowerSpeech = speechResult.toLowerCase().trim();
+            if (lowerSpeech.contains("pagar") || lowerSpeech.contains("confirmar") || 
+                lowerSpeech.contains("uno") || lowerSpeech.contains("sí") || 
+                lowerSpeech.contains("si") || lowerSpeech.contains("1") || 
+                lowerSpeech.contains("tarjeta")) {
+                resolvedOption = "1";
+            } else if (lowerSpeech.contains("agente") || lowerSpeech.contains("soporte") || 
+                       lowerSpeech.contains("dos") || lowerSpeech.contains("hablar") || 
+                       lowerSpeech.contains("ayuda") || lowerSpeech.contains("2")) {
+                resolvedOption = "2";
+            }
+        }
+
+        LiveCall call = liveCalls.get(callId);
+        if (call != null) {
+            if (speechResult != null && !speechResult.isEmpty()) {
+                call.getCallEvents().add("Entrada por voz recibida: \"" + speechResult + "\"");
+            }
+            if (digits != null && !digits.isEmpty()) {
+                call.getCallEvents().add("Dígito DTMF recibido: \"" + digits + "\"");
+            }
+            if ((digits == null || digits.isEmpty()) && (speechResult == null || speechResult.isEmpty())) {
+                call.getCallEvents().add("No se recibió ninguna entrada (tiempo de espera agotado).");
+            }
+            callRepository.save(call);
+            broadcaster.broadcast(liveCalls.values());
+        }
+
+        if ("1".equals(resolvedOption) || "2".equals(resolvedOption)) {
+            log.info("User selected option {} (derived from digits/speech)", resolvedOption);
             
-            if ("1".equals(digits)) {
-                LiveCall activeCall = liveCalls.get(callId);
+            if ("1".equals(resolvedOption)) {
                 String amountStr = "25.00";
-                if (activeCall != null) {
-                    activeCall.setStatus("PROCESSING_PAYMENT");
-                    activeCall.setSelectedOption(digits);
-                    activeCall.getCallEvents().add("Usuario pulsó 1: Iniciando cobro seguro vía Twilio Pay...");
-                    amountStr = String.format(java.util.Locale.US, "%.2f", activeCall.getCallAmount());
-                    callRepository.save(activeCall);
+                if (call != null) {
+                    call.setStatus("PROCESSING_PAYMENT");
+                    call.setSelectedOption(resolvedOption);
+                    if (speechResult != null && !speechResult.isEmpty()) {
+                        call.getCallEvents().add("Intención identificada (Pagar): Iniciando cobro seguro vía Twilio Pay...");
+                    } else {
+                        call.getCallEvents().add("Usuario pulsó 1: Iniciando cobro seguro vía Twilio Pay...");
+                    }
+                    amountStr = String.format(java.util.Locale.US, "%.2f", call.getCallAmount());
+                    callRepository.save(call);
                     broadcaster.broadcast(liveCalls.values());
                 }
 
@@ -384,7 +420,7 @@ public class IvrService {
             }
             
             // Reutilizamos la lógica de confirmación existente para la opción 2 (transferencia)
-            IvrResponse response = processUserOptionWithCallId(userId, digits, callId);
+            IvrResponse response = processUserOptionWithCallId(userId, resolvedOption, callId);
             
             return new VoiceResponse.Builder()
                     .say(new Say.Builder(response.getMessage())
@@ -393,10 +429,13 @@ public class IvrService {
                     .build().toXml();
         }
 
-        LiveCall call = liveCalls.get(callId);
         if (call != null) {
             call.setStatus("FAILED");
-            call.getCallEvents().add("Usuario seleccionó una opción inválida DTMF: " + digits);
+            if (speechResult != null && !speechResult.isEmpty()) {
+                call.getCallEvents().add("Usuario seleccionó una opción de voz inválida: " + speechResult);
+            } else {
+                call.getCallEvents().add("Usuario seleccionó una opción inválida DTMF: " + digits);
+            }
             callRepository.save(call);
             broadcaster.broadcast(liveCalls.values());
         }

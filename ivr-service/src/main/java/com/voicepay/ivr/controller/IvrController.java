@@ -46,11 +46,12 @@ public class IvrController {
     }
 
     @RequestMapping(value = "/twilio-webhook", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
-    @Operation(summary = "Capturar dígitos Twilio", description = "Procesa la tecla pulsada por el usuario en el teléfono.")
+    @Operation(summary = "Capturar dígitos o voz Twilio", description = "Procesa la tecla pulsada o la entrada de voz del usuario en el teléfono.")
     public String handleTwilioWebhook(
             @RequestParam("userId") Long userId,
             @RequestParam("callId") String callId,
             @RequestParam(value = "Digits", required = false) String digits,
+            @RequestParam(value = "SpeechResult", required = false) String speechResult,
             jakarta.servlet.http.HttpServletRequest request) {
         String scheme = request.getHeader("X-Forwarded-Proto");
         if (scheme == null) {
@@ -61,7 +62,7 @@ public class IvrController {
             host = request.getHeader("Host");
         }
         String baseUrl = scheme + "://" + host;
-        return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "", baseUrl);
+        return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "", speechResult != null ? speechResult : "", baseUrl);
     }
 
     @RequestMapping(value = "/twilio-pay-action", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")

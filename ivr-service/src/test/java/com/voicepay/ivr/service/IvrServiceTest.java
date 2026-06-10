@@ -115,6 +115,9 @@ class IvrServiceTest {
         assertThat(twiml).contains("<Response>");
         assertThat(twiml).contains("Hola Cristian");
         assertThat(twiml).contains("/ivr/twilio-webhook");
+        assertThat(twiml).contains("input=\"speech dtmf\"");
+        assertThat(twiml).contains("language=\"es-ES\"");
+        assertThat(twiml).contains("speechTimeout=\"auto\"");
     }
 
     @Test
@@ -126,12 +129,57 @@ class IvrServiceTest {
         String digits = "1";
 
         // WHEN
-        String twiml = ivrService.handleTwilioWebhook(userId, callId, digits, "https://localhost:8082");
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, digits, null, "https://localhost:8082");
 
         // THEN
         assertThat(twiml).contains("<Pay");
         assertThat(twiml).contains("action=\"https://localhost:8082/ivr/twilio-pay-action?userId=1\"");
         assertThat(twiml).contains("paymentConnector=\"stripe_connector\"");
+    }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should return TwiML Pay when user speaks option 1 ('pagar')")
+    void whenTwilioWebhookSpeechPagar_thenProcessPayment() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "quiero pagar la factura";
+
+        // WHEN
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).contains("<Pay");
+    }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should transfer call when user speaks option 2 ('agente')")
+    void whenTwilioWebhookSpeechAgente_thenTransferToAgent() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "deseo hablar con un agente";
+
+        // WHEN
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).contains("transfiriendo");
+    }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should return error message when speech result is invalid")
+    void whenTwilioWebhookSpeechInvalid_thenFail() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "quiero jugar con mi perro";
+
+        // WHEN
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).contains("Opción inválida");
     }
 
     @Test

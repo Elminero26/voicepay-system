@@ -87,7 +87,7 @@ public class IvrControllerIntegrationTest {
     @Test
     void handleTwilioWebhook_ShouldReturnTwiMLResponse() throws Exception {
         String mockTwiML = "<Response><Say>Pago confirmado</Say></Response>";
-        when(ivrService.handleTwilioWebhook(anyLong(), anyString(), anyString(), anyString())).thenReturn(mockTwiML);
+        when(ivrService.handleTwilioWebhook(anyLong(), anyString(), anyString(), anyString(), anyString())).thenReturn(mockTwiML);
 
         mockMvc.perform(post("/ivr/twilio-webhook")
                 .param("userId", "3")
