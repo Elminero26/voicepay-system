@@ -176,7 +176,7 @@ class IvrServiceTest {
     }
 
     @Test
-    @DisplayName("handleTwilioWebhook — Should return error message when speech result is invalid")
+    @DisplayName("handleTwilioWebhook — Should return retry prompt on first speech failure")
     void whenTwilioWebhookSpeechInvalid_thenFail() {
         // GIVEN
         Long userId = 1L;
@@ -188,8 +188,53 @@ class IvrServiceTest {
         String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
 
         // THEN
-        assertThat(twiml).contains("Opción inválida");
+        assertThat(twiml).contains("No le hemos entendido");
+        assertThat(twiml).contains("input=\"speech dtmf\"");
     }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should return DTMF-only fallback on second consecutive speech failure")
+    void whenTwilioWebhookSpeechInvalidConsecutive_thenSecondRetryDTMF() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "quiero jugar con mi perro";
+        when(nlpClient.analyzeText(speechResult)).thenThrow(new FallbackIntentException("Intent not recognized (FALLBACK)"));
+
+        // WHEN: Attempt 1
+        String twiml1 = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+        
+        // THEN: First attempt should ask to retry with speech and DTMF
+        assertThat(twiml1).contains("No le hemos entendido");
+        assertThat(twiml1).contains("input=\"speech dtmf\"");
+
+        // WHEN: Attempt 2
+        String twiml2 = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+
+        // THEN: Second attempt should ask to use DTMF keypad only
+        assertThat(twiml2).contains("No hemos podido entender su voz");
+        assertThat(twiml2).contains("input=\"dtmf\"");
+    }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should hang up on third consecutive speech failure")
+    void whenTwilioWebhookSpeechInvalidThirdTime_thenHangup() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "quiero jugar con mi perro";
+        when(nlpClient.analyzeText(speechResult)).thenThrow(new FallbackIntentException("Intent not recognized (FALLBACK)"));
+
+        // WHEN: 3 consecutive failures
+        ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+        ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+        String twiml3 = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+
+        // THEN: Third attempt should say abort message and hang up
+        assertThat(twiml3).contains("No hemos recibido una respuesta válida");
+        assertThat(twiml3).contains("<Hangup/>");
+    }
+
 
     @Test
     @DisplayName("handleTwilioWebhook — Should cancel call when user speaks option 3 ('cancelar')")

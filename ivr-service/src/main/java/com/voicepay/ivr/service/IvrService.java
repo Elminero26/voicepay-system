@@ -38,6 +38,8 @@ public class IvrService {
     private final com.voicepay.ivr.repository.IvrFlowConfigRepository flowConfigRepository;
     private final com.voicepay.ivr.config.TwilioProperties twilioProperties;
     private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, Integer> localFailedSpeechAttempts = new java.util.concurrent.ConcurrentHashMap<>();
+
 
     private final com.voicepay.ivr.security.JwtUtil jwtUtil;
     private final NlpClient nlpClient;
@@ -382,31 +384,104 @@ public class IvrService {
         }
 
         String resolvedOption = (digits != null) ? digits.trim() : "";
-        if (resolvedOption.isEmpty() && speechResult != null && !speechResult.isEmpty()) {
-            try {
-                NlpResult nlpResult = nlpClient.analyzeText(speechResult);
-                String intent = nlpResult.getIntent();
-                if ("PAY_DEBT".equals(intent)) {
-                    resolvedOption = "1";
-                    if (call != null) {
-                        call.getCallEvents().add("Intención identificada (Pagar) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+        boolean isSpeechFailure = false;
+
+        if (resolvedOption.isEmpty()) {
+            if (speechResult == null || speechResult.trim().isEmpty()) {
+                isSpeechFailure = true;
+            } else {
+                try {
+                    NlpResult nlpResult = nlpClient.analyzeText(speechResult);
+                    String intent = nlpResult.getIntent();
+                    if ("PAY_DEBT".equals(intent)) {
+                        resolvedOption = "1";
+                        if (call != null) {
+                            call.getCallEvents().add("Intención identificada (Pagar) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                        }
+                    } else if ("TALK_TO_AGENT".equals(intent)) {
+                        resolvedOption = "2";
+                        if (call != null) {
+                            call.getCallEvents().add("Intención identificada (Hablar con agente) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                        }
+                    } else if ("CANCEL".equals(intent)) {
+                        resolvedOption = "3";
+                        if (call != null) {
+                            call.getCallEvents().add("Intención identificada (Cancelar) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                        }
                     }
-                } else if ("TALK_TO_AGENT".equals(intent)) {
-                    resolvedOption = "2";
+                } catch (FallbackIntentException e) {
+                    log.warn("NLP processing fallback for text \"{}\": {}", speechResult, e.getMessage());
                     if (call != null) {
-                        call.getCallEvents().add("Intención identificada (Hablar con agente) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                        call.getCallEvents().add("Error NLP: Intención no reconocida (FALLBACK) para el texto: \"" + speechResult + "\"");
                     }
-                } else if ("CANCEL".equals(intent)) {
-                    resolvedOption = "3";
-                    if (call != null) {
-                        call.getCallEvents().add("Intención identificada (Cancelar) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
-                    }
+                    isSpeechFailure = true;
                 }
-            } catch (FallbackIntentException e) {
-                log.warn("NLP processing fallback for text \"{}\": {}", speechResult, e.getMessage());
+            }
+        }
+
+        if (isSpeechFailure) {
+            int failedAttempts = 0;
+            if (call != null) {
+                failedAttempts = call.getFailedSpeechAttempts() + 1;
+                call.setFailedSpeechAttempts(failedAttempts);
+                call.getCallEvents().add("Intento fallido de voz consecutivo #" + failedAttempts);
+                callRepository.save(call);
+                broadcaster.broadcast(liveCalls.values());
+            } else {
+                failedAttempts = localFailedSpeechAttempts.getOrDefault(callId, 0) + 1;
+                localFailedSpeechAttempts.put(callId, failedAttempts);
+            }
+
+            String domain = baseUrl;
+            if (domain == null || domain.isEmpty()) {
+                domain = twilioProperties.getWebhookUrl();
+            }
+            if (domain == null || domain.isEmpty()) {
+                domain = "http://localhost:8082";
+            }
+            if (domain.endsWith("/")) {
+                domain = domain.substring(0, domain.length() - 1);
+            }
+
+            if (failedAttempts == 1) {
+                String retryPrompt = "No le hemos entendido. Por favor, vuelva a intentarlo. Para confirmar el pago, pulse 1 o diga pagar. Para hablar con un agente, pulse 2 o diga agente.";
+                return new VoiceResponse.Builder()
+                        .gather(new Gather.Builder()
+                                .inputs(java.util.Arrays.asList(Gather.Input.SPEECH, Gather.Input.DTMF))
+                                .language(Gather.Language.ES_ES)
+                                .speechTimeout("auto")
+                                .numDigits(1)
+                                .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callId)
+                                .partialResultCallback(domain + "/ivr/twilio-webhook?userId=" + userId + "&callId=" + callId)
+                                .say(new Say.Builder(retryPrompt)
+                                        .language(Say.Language.ES_ES).build())
+                                .build())
+                        .build().toXml();
+            } else if (failedAttempts == 2) {
+                String dtmfPrompt = "No hemos podido entender su voz. Por favor, use el teclado numérico de su teléfono. Pulse 1 para confirmar el pago, o pulse 2 para hablar con un agente.";
+                return new VoiceResponse.Builder()
+                        .gather(new Gather.Builder()
+                                .inputs(java.util.Arrays.asList(Gather.Input.DTMF))
+                                .numDigits(1)
+                                .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callId)
+                                .say(new Say.Builder(dtmfPrompt)
+                                        .language(Say.Language.ES_ES).build())
+                                .build())
+                        .build().toXml();
+            } else {
                 if (call != null) {
-                    call.getCallEvents().add("Error NLP: Intención no reconocida (FALLBACK) para el texto: \"" + speechResult + "\"");
+                    call.setStatus("FAILED");
+                    call.getCallEvents().add("Llamada terminada tras " + failedAttempts + " intentos de voz fallidos.");
+                    callRepository.save(call);
+                    broadcaster.broadcast(liveCalls.values());
                 }
+                localFailedSpeechAttempts.remove(callId);
+
+                return new VoiceResponse.Builder()
+                        .say(new Say.Builder("No hemos recibido una respuesta válida. Operación cancelada. ¡Adiós!")
+                                .language(Say.Language.ES_ES).build())
+                        .hangup(new Hangup.Builder().build())
+                        .build().toXml();
             }
         }
 
@@ -418,6 +493,13 @@ public class IvrService {
         if ("1".equals(resolvedOption) || "2".equals(resolvedOption) || "3".equals(resolvedOption)) {
             log.info("User selected option {} (derived from digits/speech)", resolvedOption);
             
+            if (call != null) {
+                call.setFailedSpeechAttempts(0);
+                callRepository.save(call);
+                broadcaster.broadcast(liveCalls.values());
+            }
+            localFailedSpeechAttempts.remove(callId);
+
             if ("1".equals(resolvedOption)) {
                 String amountStr = "25.00";
                 if (call != null) {
@@ -467,16 +549,14 @@ public class IvrService {
                         .pay(pay)
                         .build().toXml();
             } else if ("2".equals(resolvedOption)) {
-                // Reutilizamos la lógica de confirmación existente para la opción 2 (transferencia)
                 IvrResponse response = processUserOptionWithCallId(userId, resolvedOption, callId);
                 
                 return new VoiceResponse.Builder()
                         .say(new Say.Builder(response.getMessage())
                                 .language(Say.Language.ES_ES).build())
-                        .hangup(new Hangup.Builder().build()) // En Twilio real aquí iría un <Dial>
+                        .hangup(new Hangup.Builder().build())
                         .build().toXml();
             } else {
-                // Opción 3 - CANCEL
                 if (call != null) {
                     call.setStatus("FAILED");
                     call.setSelectedOption("3");
@@ -502,6 +582,7 @@ public class IvrService {
             callRepository.save(call);
             broadcaster.broadcast(liveCalls.values());
         }
+        localFailedSpeechAttempts.remove(callId);
 
         return new VoiceResponse.Builder()
                 .say(new Say.Builder("Opción inválida. Operación cancelada. ¡Adiós!")
@@ -509,6 +590,7 @@ public class IvrService {
                 .hangup(new Hangup.Builder().build())
                 .build().toXml();
     }
+
 
     public void handleTwilioStatus(String callSid, String callStatus, String durationStr) {
         log.info("Received Twilio status callback: callSid={}, status={}, duration={}", callSid, callStatus, durationStr);
@@ -564,9 +646,11 @@ public class IvrService {
                     @Override
                     public void run() {
                         liveCalls.remove(sid);
+                        localFailedSpeechAttempts.remove(sid);
                         broadcaster.broadcast(liveCalls.values());
                     }
                 }, 5000);
+
             }
         }
     }
@@ -956,9 +1040,11 @@ public class IvrService {
                     @Override
                     public void run() {
                         liveCalls.remove(sid);
+                        localFailedSpeechAttempts.remove(sid);
                         broadcaster.broadcast(liveCalls.values());
                     }
                 }, 5000);
+
             }
             
             callRepository.save(activeCall);

@@ -43,6 +43,11 @@ public class LiveCall {
     @Schema(description = "Tecla o dígito pulsado por el usuario en el teclado telefónico", example = "1")
     private String selectedOption; // Opción pulsada (ej. "1" para pagar)
 
+    @Column(name = "failed_speech_attempts")
+    @Schema(description = "Número de intentos fallidos de entrada de voz consecutivos", example = "0")
+    @Builder.Default
+    private int failedSpeechAttempts = 0;
+
     @Schema(description = "Dirección de la llamada", example = "INBOUND", allowableValues = {"INBOUND", "OUTBOUND"})
     private String direction;     // "INBOUND" o "OUTBOUND"
 
