@@ -344,4 +344,36 @@ class IvrServiceTest {
         verify(callRepository, atLeastOnce()).save(any());
         assertThat(mockCall.getStatus()).isEqualTo("COMPLETED");
     }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should broadcast partial transcription and return empty TwiML on UnstableSpeechResult")
+    void whenTwilioWebhookPartialTranscription_thenBroadcastAndReturnEmptyTwiML() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String unstableSpeechResult = "quiero pag";
+
+        // WHEN
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, null, null, unstableSpeechResult, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).isEqualTo("<Response/>");
+        verify(broadcaster, times(1)).broadcastTranscription(callId, "user", unstableSpeechResult);
+    }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should broadcast final transcription when SpeechResult is present")
+    void whenTwilioWebhookSpeechResultPresent_thenBroadcastFinalTranscription() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "quiero pagar";
+        when(nlpClient.analyzeText(speechResult)).thenReturn(new NlpResult("PAY_DEBT", 0.95));
+
+        // WHEN
+        ivrService.handleTwilioWebhook(userId, callId, null, speechResult, null, "https://localhost:8082");
+
+        // THEN
+        verify(broadcaster, times(1)).broadcastTranscription(callId, "user", speechResult);
+    }
 }

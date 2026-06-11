@@ -23,4 +23,18 @@ public class LiveCallBroadcaster {
         log.debug("Broadcasting {} live calls to WebSocket clients", liveCalls.size());
         messagingTemplate.convertAndSend("/topic/live-calls", liveCalls);
     }
+
+    /**
+     * Emite una transcripción de voz en tiempo real al frontend
+     */
+    public void broadcastTranscription(String callSid, String role, String text) {
+        log.debug("Broadcasting transcription for call {}: [{}] {}", callSid, role, text);
+        java.util.Map<String, String> payload = java.util.Map.of(
+            "callSid", callSid,
+            "role", role,
+            "text", text
+        );
+        messagingTemplate.convertAndSend("/topic/transcriptions", payload);
+        messagingTemplate.convertAndSend("/topic/calls/" + callSid + "/transcriptions", payload);
+    }
 }

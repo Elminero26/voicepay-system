@@ -233,6 +233,10 @@ public class IvrService {
     }
 
     public String handleTwilioCall(String from, String callSid) {
+        return handleTwilioCall(from, callSid, null);
+    }
+
+    public String handleTwilioCall(String from, String callSid, String baseUrl) {
         log.info("Handling real Twilio call from: {}, callSid: {}", from, callSid);
 
         java.util.List<String> currentEvents = new java.util.ArrayList<>();
@@ -295,6 +299,17 @@ public class IvrService {
             String gatherTemplate = getVoicePromptFromConfig("4", "Para confirmar el pago, pulse 1. Para hablar con un agente, pulse 2. Para cancelar, cuelgue.");
             String gatherPrompt = gatherTemplate.replace("{name}", name).replace("{amount}", amountStr);
 
+            String domain = baseUrl;
+            if (domain == null || domain.isEmpty()) {
+                domain = twilioProperties.getWebhookUrl();
+            }
+            if (domain == null || domain.isEmpty()) {
+                domain = "http://localhost:8082";
+            }
+            if (domain.endsWith("/")) {
+                domain = domain.substring(0, domain.length() - 1);
+            }
+
             return new VoiceResponse.Builder()
                     .say(new Say.Builder(welcomePrompt + " " + queryPrompt)
                             .language(Say.Language.ES_ES).build())
@@ -304,6 +319,7 @@ public class IvrService {
                             .speechTimeout("auto")
                             .numDigits(1)
                             .action("/ivr/twilio-webhook?userId=" + userId + "&callId=" + callSid)
+                            .partialResultCallback(domain + "/ivr/twilio-webhook?userId=" + userId + "&callId=" + callSid)
                             .say(new Say.Builder(gatherPrompt)
                                     .language(Say.Language.ES_ES).build())
                             .build())
@@ -334,8 +350,24 @@ public class IvrService {
     }
 
     public String handleTwilioWebhook(Long userId, String callId, String digits, String speechResult, String baseUrl) {
-        log.info("Received Twilio webhook: userId={}, digits={}, speechResult={}, callId={}", userId, digits, speechResult, callId);
+        return handleTwilioWebhook(userId, callId, digits, speechResult, null, baseUrl);
+    }
+
+    public String handleTwilioWebhook(Long userId, String callId, String digits, String speechResult, String unstableSpeechResult, String baseUrl) {
+        log.info("Received Twilio webhook: userId={}, digits={}, speechResult={}, unstableSpeechResult={}, callId={}", 
+                 userId, digits, speechResult, unstableSpeechResult, callId);
         
+        if (unstableSpeechResult != null && !unstableSpeechResult.isEmpty()) {
+            log.info("Partial transcription received for callId {}: {}", callId, unstableSpeechResult);
+            broadcaster.broadcastTranscription(callId, "user", unstableSpeechResult);
+            return "<Response/>";
+        }
+
+        if (speechResult != null && !speechResult.isEmpty()) {
+            log.info("Final transcription received for callId {}: {}", callId, speechResult);
+            broadcaster.broadcastTranscription(callId, "user", speechResult);
+        }
+
         LiveCall call = liveCalls.get(callId);
         if (call != null) {
             if (speechResult != null && !speechResult.isEmpty()) {
