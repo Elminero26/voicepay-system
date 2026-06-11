@@ -24,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.hibernate.ddl-auto=create-drop",
     "spring.jpa.defer-datasource-initialization=true",
     "spring.sql.init.mode=never",
+    "spring.flyway.enabled=false",
     "spring.security.oauth2.client.registration.google.client-id=dummy-id",
     "spring.security.oauth2.client.registration.google.client-secret=dummy-secret",
     "spring.security.oauth2.client.registration.google.scope=profile,email"

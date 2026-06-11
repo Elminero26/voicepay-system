@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone_number VARCHAR(255) UNIQUE,
+    password VARCHAR(255),
+    role VARCHAR(255) NOT NULL DEFAULT 'ROLE_USER',
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    provider VARCHAR(255),
+    provider_id VARCHAR(255)
+);
