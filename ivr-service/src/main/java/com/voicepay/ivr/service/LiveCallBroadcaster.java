@@ -27,6 +27,7 @@ public class LiveCallBroadcaster {
     /**
      * Emite una transcripción de voz en tiempo real al frontend
      */
+    @SuppressWarnings("null")
     public void broadcastTranscription(String callSid, String role, String text) {
         log.debug("Broadcasting transcription for call {}: [{}] {}", callSid, role, text);
         java.util.Map<String, String> payload = java.util.Map.of(
