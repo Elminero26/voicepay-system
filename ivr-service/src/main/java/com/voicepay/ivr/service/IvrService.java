@@ -21,6 +21,9 @@ import java.util.Map;
 
 import com.voicepay.ivr.client.UserServiceClient;
 import com.voicepay.ivr.client.PaymentServiceClient;
+import com.voicepay.ivr.nlp.NlpClient;
+import com.voicepay.ivr.nlp.NlpResult;
+import com.voicepay.ivr.nlp.exception.FallbackIntentException;
 
 @Slf4j
 @Service
@@ -37,6 +40,7 @@ public class IvrService {
     private final Map<String, LiveCall> liveCalls = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final com.voicepay.ivr.security.JwtUtil jwtUtil;
+    private final NlpClient nlpClient;
     
     private final java.util.concurrent.ScheduledExecutorService scheduler = java.util.concurrent.Executors.newScheduledThreadPool(1);
 
@@ -332,21 +336,6 @@ public class IvrService {
     public String handleTwilioWebhook(Long userId, String callId, String digits, String speechResult, String baseUrl) {
         log.info("Received Twilio webhook: userId={}, digits={}, speechResult={}, callId={}", userId, digits, speechResult, callId);
         
-        String resolvedOption = (digits != null) ? digits.trim() : "";
-        if (resolvedOption.isEmpty() && speechResult != null && !speechResult.isEmpty()) {
-            String lowerSpeech = speechResult.toLowerCase().trim();
-            if (lowerSpeech.contains("pagar") || lowerSpeech.contains("confirmar") || 
-                lowerSpeech.contains("uno") || lowerSpeech.contains("sí") || 
-                lowerSpeech.contains("si") || lowerSpeech.contains("1") || 
-                lowerSpeech.contains("tarjeta")) {
-                resolvedOption = "1";
-            } else if (lowerSpeech.contains("agente") || lowerSpeech.contains("soporte") || 
-                       lowerSpeech.contains("dos") || lowerSpeech.contains("hablar") || 
-                       lowerSpeech.contains("ayuda") || lowerSpeech.contains("2")) {
-                resolvedOption = "2";
-            }
-        }
-
         LiveCall call = liveCalls.get(callId);
         if (call != null) {
             if (speechResult != null && !speechResult.isEmpty()) {
@@ -358,11 +347,43 @@ public class IvrService {
             if ((digits == null || digits.isEmpty()) && (speechResult == null || speechResult.isEmpty())) {
                 call.getCallEvents().add("No se recibió ninguna entrada (tiempo de espera agotado).");
             }
+        }
+
+        String resolvedOption = (digits != null) ? digits.trim() : "";
+        if (resolvedOption.isEmpty() && speechResult != null && !speechResult.isEmpty()) {
+            try {
+                NlpResult nlpResult = nlpClient.analyzeText(speechResult);
+                String intent = nlpResult.getIntent();
+                if ("PAY_DEBT".equals(intent)) {
+                    resolvedOption = "1";
+                    if (call != null) {
+                        call.getCallEvents().add("Intención identificada (Pagar) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                    }
+                } else if ("TALK_TO_AGENT".equals(intent)) {
+                    resolvedOption = "2";
+                    if (call != null) {
+                        call.getCallEvents().add("Intención identificada (Hablar con agente) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                    }
+                } else if ("CANCEL".equals(intent)) {
+                    resolvedOption = "3";
+                    if (call != null) {
+                        call.getCallEvents().add("Intención identificada (Cancelar) con confianza " + nlpResult.getConfidence() + ": \"" + speechResult + "\"");
+                    }
+                }
+            } catch (FallbackIntentException e) {
+                log.warn("NLP processing fallback for text \"{}\": {}", speechResult, e.getMessage());
+                if (call != null) {
+                    call.getCallEvents().add("Error NLP: Intención no reconocida (FALLBACK) para el texto: \"" + speechResult + "\"");
+                }
+            }
+        }
+
+        if (call != null) {
             callRepository.save(call);
             broadcaster.broadcast(liveCalls.values());
         }
 
-        if ("1".equals(resolvedOption) || "2".equals(resolvedOption)) {
+        if ("1".equals(resolvedOption) || "2".equals(resolvedOption) || "3".equals(resolvedOption)) {
             log.info("User selected option {} (derived from digits/speech)", resolvedOption);
             
             if ("1".equals(resolvedOption)) {
@@ -370,11 +391,7 @@ public class IvrService {
                 if (call != null) {
                     call.setStatus("PROCESSING_PAYMENT");
                     call.setSelectedOption(resolvedOption);
-                    if (speechResult != null && !speechResult.isEmpty()) {
-                        call.getCallEvents().add("Intención identificada (Pagar): Iniciando cobro seguro vía Twilio Pay...");
-                    } else {
-                        call.getCallEvents().add("Usuario pulsó 1: Iniciando cobro seguro vía Twilio Pay...");
-                    }
+                    call.getCallEvents().add("Iniciando cobro seguro vía Twilio Pay...");
                     amountStr = String.format(java.util.Locale.US, "%.2f", call.getCallAmount());
                     callRepository.save(call);
                     broadcaster.broadcast(liveCalls.values());
@@ -417,16 +434,30 @@ public class IvrService {
                 return new VoiceResponse.Builder()
                         .pay(pay)
                         .build().toXml();
+            } else if ("2".equals(resolvedOption)) {
+                // Reutilizamos la lógica de confirmación existente para la opción 2 (transferencia)
+                IvrResponse response = processUserOptionWithCallId(userId, resolvedOption, callId);
+                
+                return new VoiceResponse.Builder()
+                        .say(new Say.Builder(response.getMessage())
+                                .language(Say.Language.ES_ES).build())
+                        .hangup(new Hangup.Builder().build()) // En Twilio real aquí iría un <Dial>
+                        .build().toXml();
+            } else {
+                // Opción 3 - CANCEL
+                if (call != null) {
+                    call.setStatus("FAILED");
+                    call.setSelectedOption("3");
+                    call.getCallEvents().add("Llamada cancelada por el usuario.");
+                    callRepository.save(call);
+                    broadcaster.broadcast(liveCalls.values());
+                }
+                return new VoiceResponse.Builder()
+                        .say(new Say.Builder("Operación cancelada. ¡Adiós!")
+                                .language(Say.Language.ES_ES).build())
+                        .hangup(new Hangup.Builder().build())
+                        .build().toXml();
             }
-            
-            // Reutilizamos la lógica de confirmación existente para la opción 2 (transferencia)
-            IvrResponse response = processUserOptionWithCallId(userId, resolvedOption, callId);
-            
-            return new VoiceResponse.Builder()
-                    .say(new Say.Builder(response.getMessage())
-                            .language(Say.Language.ES_ES).build())
-                    .hangup(new Hangup.Builder().build()) // En Twilio real aquí iría un <Dial>
-                    .build().toXml();
         }
 
         if (call != null) {

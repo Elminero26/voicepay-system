@@ -5,6 +5,9 @@ import com.voicepay.ivr.dto.IvrResponse;
 import com.voicepay.ivr.client.UserServiceClient;
 import com.voicepay.ivr.client.PaymentServiceClient;
 import com.voicepay.ivr.config.TwilioProperties;
+import com.voicepay.ivr.nlp.NlpClient;
+import com.voicepay.ivr.nlp.NlpResult;
+import com.voicepay.ivr.nlp.exception.FallbackIntentException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +44,9 @@ class IvrServiceTest {
 
     @Mock
     private TwilioProperties twilioProperties;
+
+    @Mock
+    private NlpClient nlpClient;
 
     @InjectMocks
     private IvrService ivrService;
@@ -144,6 +150,7 @@ class IvrServiceTest {
         Long userId = 1L;
         String callId = "CA123456789";
         String speechResult = "quiero pagar la factura";
+        when(nlpClient.analyzeText(speechResult)).thenReturn(new NlpResult("PAY_DEBT", 0.95));
 
         // WHEN
         String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
@@ -159,6 +166,7 @@ class IvrServiceTest {
         Long userId = 1L;
         String callId = "CA123456789";
         String speechResult = "deseo hablar con un agente";
+        when(nlpClient.analyzeText(speechResult)).thenReturn(new NlpResult("TALK_TO_AGENT", 0.95));
 
         // WHEN
         String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
@@ -174,12 +182,30 @@ class IvrServiceTest {
         Long userId = 1L;
         String callId = "CA123456789";
         String speechResult = "quiero jugar con mi perro";
+        when(nlpClient.analyzeText(speechResult)).thenThrow(new FallbackIntentException("Intent not recognized (FALLBACK)"));
 
         // WHEN
         String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
 
         // THEN
         assertThat(twiml).contains("Opción inválida");
+    }
+
+    @Test
+    @DisplayName("handleTwilioWebhook — Should cancel call when user speaks option 3 ('cancelar')")
+    void whenTwilioWebhookSpeechCancelar_thenCancelCall() {
+        // GIVEN
+        Long userId = 1L;
+        String callId = "CA123456789";
+        String speechResult = "quiero cancelar";
+        when(nlpClient.analyzeText(speechResult)).thenReturn(new NlpResult("CANCEL", 0.90));
+
+        // WHEN
+        String twiml = ivrService.handleTwilioWebhook(userId, callId, null, speechResult, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).contains("Operación cancelada");
+        assertThat(twiml).contains("<Hangup/>");
     }
 
     @Test
