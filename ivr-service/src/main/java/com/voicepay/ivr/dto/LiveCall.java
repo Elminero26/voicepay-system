@@ -51,6 +51,9 @@ public class LiveCall {
     @Schema(description = "Dirección de la llamada", example = "INBOUND", allowableValues = {"INBOUND", "OUTBOUND"})
     private String direction;     // "INBOUND" o "OUTBOUND"
 
+    @Schema(description = "Identificador del miembro de campaña asociado a la llamada", example = "1")
+    private Long campaignMemberId;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "call_events", joinColumns = @JoinColumn(name = "call_id"))
     @Column(name = "event")

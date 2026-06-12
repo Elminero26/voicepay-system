@@ -58,4 +58,9 @@ public class User {
 
     @Schema(description = "ID del usuario dentro del proveedor de identidad externo", example = "1048572918573")
     private String providerId;
+
+    @Column(nullable = false)
+    @Builder.Default
+    @Schema(description = "Zona horaria del usuario", example = "Europe/Madrid")
+    private String timezone = "Europe/Madrid";
 }

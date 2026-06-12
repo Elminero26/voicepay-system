@@ -9,6 +9,46 @@
       "name": "app.payment-service.url",
       "type": "java.lang.String",
       "description": "URL for the payment service."
+    },
+    {
+      "name": "app.scheduler.cron",
+      "type": "java.lang.String",
+      "description": "Cron expression for outbound call scheduler."
+    },
+    {
+      "name": "app.scheduler.chunk-size",
+      "type": "java.lang.Integer",
+      "description": "Chunk size for paginated call dispatching."
+    },
+    {
+      "name": "app.scheduler.max-concurrent-calls",
+      "type": "java.lang.Integer",
+      "description": "Max concurrent outbound calls limit."
+    },
+    {
+      "name": "app.scheduler.force-mock",
+      "type": "java.lang.Boolean",
+      "description": "Force mock calls simulation in local environment."
+    },
+    {
+      "name": "app.scheduler.commercial-hours.start",
+      "type": "java.lang.String",
+      "description": "Legal commercial hour start time."
+    },
+    {
+      "name": "app.scheduler.commercial-hours.end",
+      "type": "java.lang.String",
+      "description": "Legal commercial hour end time."
+    },
+    {
+      "name": "app.scheduler.allowed-days-of-week",
+      "type": "java.lang.String",
+      "description": "Allowed days of week for placing outbound calls."
+    },
+    {
+      "name": "app.scheduler.timezone-fallback",
+      "type": "java.lang.String",
+      "description": "Timezone fallback when member timezone is not specified."
     }
   ]
 }

@@ -13,6 +13,9 @@ import org.springframework.web.client.RestTemplate;
 import java.util.Map;
 import java.util.HashMap;
 
+import com.voicepay.ivr.dto.CampaignMemberDto;
+import com.voicepay.ivr.dto.PageResponse;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -44,5 +47,35 @@ public class UserServiceClient {
         fallbackUser.put("name", "Usuario Temporal");
         fallbackUser.put("phone", phone);
         return fallbackUser;
+    }
+
+    public PageResponse<CampaignMemberDto> getPendingCampaignMembers(int page, int size, HttpHeaders headers) {
+        log.info("Calling User Service for pending campaign members - page: {}, size: {}", page, size);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        String baseUrl = userServiceUrl;
+        if (baseUrl.endsWith("/users")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 6);
+        }
+        String url = baseUrl + "/campaigns/members/pending?page=" + page + "&size=" + size;
+        return restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                new org.springframework.core.ParameterizedTypeReference<PageResponse<CampaignMemberDto>>() {}).getBody();
+    }
+
+    public CampaignMemberDto updateCampaignMemberStatus(Long memberId, String status, HttpHeaders headers) {
+        log.info("Calling User Service to update campaign member {} status to {}", memberId, status);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        String baseUrl = userServiceUrl;
+        if (baseUrl.endsWith("/users")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 6);
+        }
+        String url = baseUrl + "/campaigns/members/" + memberId + "/status?status=" + status;
+        return restTemplate.exchange(
+                url,
+                HttpMethod.PUT,
+                entity,
+                CampaignMemberDto.class).getBody();
     }
 }

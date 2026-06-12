@@ -15,7 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(properties = {
-    "spring.datasource.url=jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+    "spring.datasource.url=jdbc:h2:mem:campaign_testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
     "spring.security.oauth2.client.registration.google.scope=profile,email"
 })
 @Transactional
+@SuppressWarnings("null")
 public class CampaignEntitiesTest {
 
     @Autowired

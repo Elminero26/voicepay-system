@@ -641,6 +641,17 @@ public class IvrService {
                 "busy".equalsIgnoreCase(callStatus) || "no-answer".equalsIgnoreCase(callStatus) || 
                 "canceled".equalsIgnoreCase(callStatus)) {
                 
+                // Update CampaignMember status
+                if (call.getCampaignMemberId() != null) {
+                    String finalMemberStatus = "NO_ANSWER";
+                    if ("completed".equalsIgnoreCase(callStatus) && "COMPLETED".equals(call.getStatus())) {
+                        finalMemberStatus = "COMPLETED";
+                    } else if ("busy".equalsIgnoreCase(callStatus)) {
+                        finalMemberStatus = "BUSY";
+                    }
+                    updateCampaignMemberCallStatus(call.getCampaignMemberId(), finalMemberStatus);
+                }
+
                 final String sid = callSid;
                 new java.util.Timer().schedule(new java.util.TimerTask() {
                     @Override
@@ -656,7 +667,11 @@ public class IvrService {
     }
 
     public IvrResponse triggerOutboundCall(String toPhoneNumber, boolean forceMock) {
-        log.info("Triggering outbound call to: {}, forceMock={}", toPhoneNumber, forceMock);
+        return triggerOutboundCall(toPhoneNumber, null, forceMock);
+    }
+
+    public IvrResponse triggerOutboundCall(String toPhoneNumber, Long campaignMemberId, boolean forceMock) {
+        log.info("Triggering outbound call to: {}, campaignMemberId={}, forceMock={}", toPhoneNumber, campaignMemberId, forceMock);
 
         boolean isTwilioConfigured = twilioProperties.getAccountSid() != null 
                 && !twilioProperties.getAccountSid().contains("PLACEHOLDER")
@@ -676,7 +691,7 @@ public class IvrService {
         double amount = 25.0;
         try {
             Map<String, Object> pendingPayment = paymentServiceClient.getPendingPayment(userId, getHeadersWithJwt());
-            if (pendingPayment != null && pendingPayment.get("amount") != null) {
+            if (pendingPayment != null && paymentDataNotEmpty(pendingPayment)) {
                 amount = Double.parseDouble(pendingPayment.get("amount").toString());
             }
         } catch (Exception e) {
@@ -729,6 +744,7 @@ public class IvrService {
                         .callAmount(amount)
                         .status("CONNECTED")
                         .direction("OUTBOUND")
+                        .campaignMemberId(campaignMemberId)
                         .timestamp(LocalDateTime.now())
                         .callEvents(events)
                         .build();
@@ -744,6 +760,7 @@ public class IvrService {
                         .build();
             } catch (Exception e) {
                 log.error("Failed to make real Twilio outbound call: {}", e.getMessage());
+                updateCampaignMemberCallStatus(campaignMemberId, "FAILED");
                 return IvrResponse.builder()
                         .message("Error al iniciar llamada real: " + e.getMessage() + ". Reintentando simulación...")
                         .nextAction("FALLBACK_SIMULATION")
@@ -765,6 +782,7 @@ public class IvrService {
                     .callAmount(amount)
                     .status("CONNECTED")
                     .direction("OUTBOUND")
+                    .campaignMemberId(campaignMemberId)
                     .timestamp(LocalDateTime.now())
                     .callEvents(events)
                     .build();
@@ -804,10 +822,12 @@ public class IvrService {
                         c.getCallEvents().add("Reproduciendo despedida: 'Gracias. Su pago ha sido procesado correctamente...'");
                         c.getCallEvents().add("Llamada finalizada correctamente. Línea liberada.");
                         c.setDuration(12L);
+                        updateCampaignMemberCallStatus(campaignMemberId, "COMPLETED");
                     } catch (Exception e) {
                         c.setStatus("FAILED");
                         c.getCallEvents().add("Error al confirmar el pago en la pasarela: " + e.getMessage());
                         c.getCallEvents().add("Llamada finalizada con error.");
+                        updateCampaignMemberCallStatus(campaignMemberId, "FAILED");
                     }
                     callRepository.save(c);
                     broadcaster.broadcast(liveCalls.values());
@@ -826,6 +846,10 @@ public class IvrService {
                     .userId(userId)
                     .build();
         }
+    }
+
+    private boolean paymentDataNotEmpty(Map<String, Object> paymentData) {
+        return paymentData.get("amount") != null && !paymentData.get("amount").toString().trim().isEmpty();
     }
 
     private static final String DEFAULT_FLOW_JSON = "{\"nodes\":[" +
@@ -922,6 +946,9 @@ public class IvrService {
                     callRepository.save(activeCall);
                     broadcaster.broadcast(liveCalls.values());
 
+                    // Update CampaignMember status
+                    updateCampaignMemberCallStatus(activeCall.getCampaignMemberId(), "COMPLETED");
+
                     final String sid = callSid;
                     new java.util.Timer().schedule(new java.util.TimerTask() {
                         @Override
@@ -952,6 +979,9 @@ public class IvrService {
             activeCall.getCallEvents().add("Fallo en Twilio Pay: " + result + " (Error: " + paymentError + ")");
             callRepository.save(activeCall);
             broadcaster.broadcast(liveCalls.values());
+
+            // Update CampaignMember status
+            updateCampaignMemberCallStatus(activeCall.getCampaignMemberId(), "FAILED");
 
             final String sid = callSid;
             new java.util.Timer().schedule(new java.util.TimerTask() {
@@ -1045,10 +1075,32 @@ public class IvrService {
                     }
                 }, 5000);
 
+                // Update CampaignMember status
+                updateCampaignMemberCallStatus(activeCall.getCampaignMemberId(), status);
             }
             
             callRepository.save(activeCall);
             broadcaster.broadcast(liveCalls.values());
+        }
+    }
+
+    private void updateCampaignMemberCallStatus(Long memberId, String callStatus) {
+        if (memberId == null) return;
+        try {
+            log.info("Updating campaign member {} status to {} via user-service", memberId, callStatus);
+            String mappedStatus = "NO_ANSWER";
+            if ("COMPLETED".equals(callStatus)) {
+                mappedStatus = "COMPLETED";
+            } else if ("BUSY".equals(callStatus)) {
+                mappedStatus = "BUSY";
+            } else if ("RINGING".equals(callStatus) || "CONNECTED".equals(callStatus) || "IN_PROGRESS".equals(callStatus) || "PROCESSING_PAYMENT".equals(callStatus) || "WAITING_CONFIRMATION".equals(callStatus)) {
+                mappedStatus = "RINGING";
+            } else {
+                mappedStatus = "NO_ANSWER";
+            }
+            userServiceClient.updateCampaignMemberStatus(memberId, mappedStatus, getHeadersWithJwt());
+        } catch (Exception e) {
+            log.error("Failed to update status for campaign member {} to {}: {}", memberId, callStatus, e.getMessage());
         }
     }
 

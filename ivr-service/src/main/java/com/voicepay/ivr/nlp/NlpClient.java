@@ -1,5 +1,6 @@
 package com.voicepay.ivr.nlp;
 
+// Client interface for Natural Language Processing
 import com.voicepay.ivr.nlp.exception.NlpException;
 
 public interface NlpClient {
