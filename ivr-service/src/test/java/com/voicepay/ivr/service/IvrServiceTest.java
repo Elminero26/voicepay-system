@@ -421,4 +421,57 @@ class IvrServiceTest {
         // THEN
         verify(broadcaster, times(1)).broadcastTranscription(callId, "user", speechResult);
     }
+
+    @Test
+    @DisplayName("handleTwilioAmdCallback — Should update campaign member status to PENDING and hang up when answered by machine")
+    void whenAmdCallbackMachine_thenUpdateToPendingAndHangup() {
+        // GIVEN
+        String from = "+34666000111";
+        String callSid = "CA123456789";
+        String answeredBy = "machine_start";
+
+        com.voicepay.ivr.dto.LiveCall mockCall = com.voicepay.ivr.dto.LiveCall.builder()
+                .id(callSid)
+                .phoneNumber(from)
+                .status("CONNECTED")
+                .campaignMemberId(101L)
+                .callEvents(new java.util.ArrayList<>())
+                .build();
+        when(callRepository.findById(callSid)).thenReturn(java.util.Optional.of(mockCall));
+
+        // WHEN
+        String twiml = ivrService.handleTwilioAmdCallback(from, callSid, answeredBy, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).contains("Buzón de voz detectado");
+        assertThat(twiml).contains("<Hangup/>");
+        assertThat(mockCall.getStatus()).isEqualTo("MACHINE_DETECTED");
+        verify(userServiceClient, times(1)).updateCampaignMemberStatus(eq(101L), eq("PENDING"), any());
+    }
+
+    @Test
+    @DisplayName("handleTwilioAmdCallback — Should redirect to twilio-call when answered by human")
+    void whenAmdCallbackHuman_thenRedirectToTwilioCall() {
+        // GIVEN
+        String from = "+34666000111";
+        String callSid = "CA123456789";
+        String answeredBy = "human";
+
+        com.voicepay.ivr.dto.LiveCall mockCall = com.voicepay.ivr.dto.LiveCall.builder()
+                .id(callSid)
+                .phoneNumber(from)
+                .status("CONNECTED")
+                .campaignMemberId(101L)
+                .callEvents(new java.util.ArrayList<>())
+                .build();
+        when(callRepository.findById(callSid)).thenReturn(java.util.Optional.of(mockCall));
+
+        // WHEN
+        String twiml = ivrService.handleTwilioAmdCallback(from, callSid, answeredBy, "https://localhost:8082");
+
+        // THEN
+        assertThat(twiml).contains("<Redirect>");
+        assertThat(twiml).contains("/ivr/twilio-call?From=%2B34666000111");
+        assertThat(twiml).contains("CallSid=CA123456789");
+    }
 }

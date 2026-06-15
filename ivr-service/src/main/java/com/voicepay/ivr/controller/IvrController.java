@@ -45,6 +45,25 @@ public class IvrController {
         return ivrService.handleTwilioCall(from, callSid);
     }
 
+    @RequestMapping(value = "/twilio-amd-callback", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
+    @Operation(summary = "Capturar detección de contestador automático", description = "Procesa el resultado de Answering Machine Detection (AMD) de Twilio.")
+    public String handleTwilioAmdCallback(
+            @RequestParam("From") String from,
+            @RequestParam("CallSid") String callSid,
+            @RequestParam(value = "AnsweredBy", required = false) String answeredBy,
+            jakarta.servlet.http.HttpServletRequest request) {
+        String scheme = request.getHeader("X-Forwarded-Proto");
+        if (scheme == null) {
+            scheme = request.getScheme();
+        }
+        String host = request.getHeader("X-Forwarded-Host");
+        if (host == null) {
+            host = request.getHeader("Host");
+        }
+        String baseUrl = scheme + "://" + host;
+        return ivrService.handleTwilioAmdCallback(from, callSid, answeredBy, baseUrl);
+    }
+
     @RequestMapping(value = "/twilio-webhook", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
     @Operation(summary = "Capturar dígitos o voz Twilio", description = "Procesa la tecla pulsada o la entrada de voz del usuario en el teléfono.")
     public String handleTwilioWebhook(
@@ -183,6 +202,21 @@ public class IvrController {
     @Operation(summary = "Obtener llamadas en vivo", description = "Devuelve el estado actual de todas las llamadas en progreso en el sistema IVR.")
     public java.util.Collection<com.voicepay.ivr.dto.LiveCall> getLiveCalls() {
         return ivrService.getLiveCalls();
+    }
+
+    @PostMapping("/calls/transfer-back")
+    @Operation(summary = "Transferir llamada de regreso al IVR de pago", description = "El agente devuelve la llamada al IVR seguro para que el cliente introduzca sus datos bancarios.")
+    public org.springframework.http.ResponseEntity<?> transferBackToPaymentIvr(@RequestBody java.util.Map<String, String> payload) {
+        String callId = payload.get("callId");
+        if (callId == null || callId.isEmpty()) {
+            return org.springframework.http.ResponseEntity.badRequest().body("El campo 'callId' es requerido.");
+        }
+        boolean success = ivrService.transferBackToPaymentIvr(callId);
+        if (success) {
+            return org.springframework.http.ResponseEntity.ok(java.util.Map.of("success", true, "message", "Llamada transferida al IVR de pago con éxito."));
+        } else {
+            return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body("No se encontró la llamada activa o no se pudo transferir.");
+        }
     }
 
     @GetMapping("/calls/history")

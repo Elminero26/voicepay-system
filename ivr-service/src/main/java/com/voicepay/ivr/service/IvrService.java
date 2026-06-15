@@ -12,6 +12,7 @@ import com.twilio.twiml.voice.Gather;
 import com.twilio.twiml.voice.Hangup;
 import com.twilio.twiml.voice.Pay;
 import com.twilio.twiml.voice.Prompt;
+import com.twilio.twiml.voice.Redirect;
 import java.time.LocalDateTime;
 
 import java.util.UUID;
@@ -227,6 +228,76 @@ public class IvrService {
                     .message("Hubo un error al procesar su pago. Inténtelo de nuevo más tarde o póngase en contacto con soporte.")
                     .nextAction("HANGUP")
                     .build();
+        }
+    }
+
+    public String handleTwilioAmdCallback(String from, String callSid, String answeredBy, String baseUrl) {
+        log.info("Received Twilio AMD callback: from={}, callSid={}, answeredBy={}", from, callSid, answeredBy);
+
+        LiveCall call = liveCalls.get(callSid);
+        if (call == null) {
+            call = callRepository.findById(callSid).orElse(null);
+        }
+
+        boolean isMachine = answeredBy != null && (
+            answeredBy.toLowerCase().startsWith("machine") ||
+            answeredBy.toLowerCase().contains("voicemail") ||
+            answeredBy.toLowerCase().contains("message")
+        );
+
+        if (isMachine) {
+            log.info("AMD detected machine for call {}. Updating campaign member to retry state.", callSid);
+            if (call != null) {
+                call.getCallEvents().add("Contestador automático detectado (" + answeredBy + "). Colgando llamada.");
+                call.setStatus("MACHINE_DETECTED");
+                callRepository.save(call);
+
+                // Update CampaignMember status to PENDING (retry state)
+                if (call.getCampaignMemberId() != null) {
+                    updateCampaignMemberCallStatus(call.getCampaignMemberId(), "PENDING_RETRY");
+                }
+
+                broadcaster.broadcast(liveCalls.values());
+            }
+
+            // Return TwiML to say a short message and hang up
+            return new VoiceResponse.Builder()
+                    .say(new Say.Builder("Buzón de voz detectado. Intentaremos contactarle más tarde. Gracias.")
+                            .language(Say.Language.ES_ES).build())
+                    .hangup(new Hangup.Builder().build())
+                    .build().toXml();
+        } else {
+            // "Si detecta una voz humana, debe hacer un reenvío inmediato (forward) al flujo raíz del IVR de pagos de manera transparente."
+            log.info("AMD detected human or other for call {}. Redirecting to IVR root flow.", callSid);
+            if (call != null) {
+                call.getCallEvents().add("Voz humana detectada. Conectando al IVR de pagos...");
+                callRepository.save(call);
+                broadcaster.broadcast(liveCalls.values());
+            }
+
+            String domain = baseUrl;
+            if (domain == null || domain.isEmpty()) {
+                domain = twilioProperties.getWebhookUrl();
+            }
+            if (domain == null || domain.isEmpty()) {
+                domain = "http://localhost:8082";
+            }
+            if (domain.endsWith("/")) {
+                domain = domain.substring(0, domain.length() - 1);
+            }
+
+            String redirectUrl = "";
+            try {
+                redirectUrl = domain + "/ivr/twilio-call?From=" + java.net.URLEncoder.encode(from, "UTF-8")
+                        + "&CallSid=" + callSid;
+            } catch (Exception e) {
+                log.error("Encoding error: {}", e.getMessage());
+                redirectUrl = domain + "/ivr/twilio-call?From=" + from + "&CallSid=" + callSid;
+            }
+
+            return new VoiceResponse.Builder()
+                    .redirect(new Redirect.Builder(redirectUrl).build())
+                    .build().toXml();
         }
     }
 
@@ -612,21 +683,29 @@ public class IvrService {
             }
             
             if ("completed".equalsIgnoreCase(callStatus)) {
-                if (!"COMPLETED".equals(call.getStatus()) && !"TRANSFERRED".equals(call.getStatus()) && !"FAILED".equals(call.getStatus())) {
+                if (!"COMPLETED".equals(call.getStatus()) && !"TRANSFERRED".equals(call.getStatus()) && !"FAILED".equals(call.getStatus()) && !"MACHINE_DETECTED".equals(call.getStatus())) {
                     call.setStatus("FAILED");
                     call.getCallEvents().add("La llamada finalizó sin confirmación del usuario.");
                 }
             } else if ("failed".equalsIgnoreCase(callStatus)) {
-                call.setStatus("FAILED");
+                if (!"MACHINE_DETECTED".equals(call.getStatus())) {
+                    call.setStatus("FAILED");
+                }
                 call.getCallEvents().add("Error de conexión de Twilio.");
             } else if ("busy".equalsIgnoreCase(callStatus)) {
-                call.setStatus("FAILED");
+                if (!"MACHINE_DETECTED".equals(call.getStatus())) {
+                    call.setStatus("FAILED");
+                }
                 call.getCallEvents().add("Línea ocupada.");
             } else if ("no-answer".equalsIgnoreCase(callStatus)) {
-                call.setStatus("FAILED");
+                if (!"MACHINE_DETECTED".equals(call.getStatus())) {
+                    call.setStatus("FAILED");
+                }
                 call.getCallEvents().add("Sin respuesta del usuario.");
             } else if ("canceled".equalsIgnoreCase(callStatus)) {
-                call.setStatus("FAILED");
+                if (!"MACHINE_DETECTED".equals(call.getStatus())) {
+                    call.setStatus("FAILED");
+                }
                 call.getCallEvents().add("Llamada cancelada de forma externa.");
             } else if ("in-progress".equalsIgnoreCase(callStatus)) {
                 if ("PENDING".equals(call.getStatus())) {
@@ -642,7 +721,7 @@ public class IvrService {
                 "canceled".equalsIgnoreCase(callStatus)) {
                 
                 // Update CampaignMember status
-                if (call.getCampaignMemberId() != null) {
+                if (call.getCampaignMemberId() != null && !"MACHINE_DETECTED".equals(call.getStatus())) {
                     String finalMemberStatus = "NO_ANSWER";
                     if ("completed".equalsIgnoreCase(callStatus) && "COMPLETED".equals(call.getStatus())) {
                         finalMemberStatus = "COMPLETED";
@@ -714,7 +793,7 @@ public class IvrService {
                     domain = domain.substring(0, domain.length() - 1);
                 }
                 
-                String twimlUrl = domain + "/ivr/twilio-call?From=" + java.net.URLEncoder.encode(toPhoneNumber, "UTF-8") 
+                String twimlUrl = domain + "/ivr/twilio-amd-callback?From=" + java.net.URLEncoder.encode(toPhoneNumber, "UTF-8") 
                         + "&CallSid=" + callSid;
                 String statusCallbackUrl = domain + "/ivr/twilio-status";
 
@@ -728,6 +807,7 @@ public class IvrService {
                 .setStatusCallback(new java.net.URI(statusCallbackUrl))
                 .setStatusCallbackEvent(java.util.Arrays.asList("initiated", "ringing", "answered", "completed"))
                 .setStatusCallbackMethod(com.twilio.http.HttpMethod.POST)
+                .setMachineDetection("Enable")
                 .create();
 
                 String realCallSid = twilioCall.getSid();
@@ -1093,6 +1173,8 @@ public class IvrService {
                 mappedStatus = "COMPLETED";
             } else if ("BUSY".equals(callStatus)) {
                 mappedStatus = "BUSY";
+            } else if ("PENDING_RETRY".equals(callStatus)) {
+                mappedStatus = "PENDING";
             } else if ("RINGING".equals(callStatus) || "CONNECTED".equals(callStatus) || "IN_PROGRESS".equals(callStatus) || "PROCESSING_PAYMENT".equals(callStatus) || "WAITING_CONFIRMATION".equals(callStatus)) {
                 mappedStatus = "RINGING";
             } else {
@@ -1101,6 +1183,72 @@ public class IvrService {
             userServiceClient.updateCampaignMemberStatus(memberId, mappedStatus, getHeadersWithJwt());
         } catch (Exception e) {
             log.error("Failed to update status for campaign member {} to {}: {}", memberId, callStatus, e.getMessage());
+        }
+    }
+
+    public boolean transferBackToPaymentIvr(String callId) {
+        log.info("Requesting transfer back to secure payment IVR for call ID: {}", callId);
+        
+        LiveCall activeCall = liveCalls.get(callId);
+        if (activeCall == null) {
+            activeCall = callRepository.findById(callId).orElse(null);
+        }
+        
+        if (activeCall == null) {
+            log.warn("Call with ID {} not found for transfer-back.", callId);
+            return false;
+        }
+
+        // Update call details in dashboard
+        activeCall.setStatus("PROCESSING_PAYMENT");
+        activeCall.setSelectedOption("1");
+        activeCall.getCallEvents().add("Agente inició transferencia segura de regreso al IVR de pago.");
+        activeCall.getCallEvents().add("Iniciando cobro seguro vía Twilio Pay...");
+        callRepository.save(activeCall);
+        broadcaster.broadcast(liveCalls.values());
+
+        // Determine if it is a real Twilio call or simulated
+        boolean isTwilioCall = activeCall.getId() != null && !activeCall.getId().startsWith("SIM-");
+
+        if (isTwilioCall) {
+            try {
+                // Fetch userId
+                Long userId = 999L; // fallback
+                try {
+                    java.util.Map<String, Object> user = userServiceClient.getUserByPhone(activeCall.getPhoneNumber(), getHeadersWithJwt());
+                    if (user != null && user.containsKey("id")) {
+                        userId = ((Number) user.get("id")).longValue();
+                    }
+                } catch (Exception e) {
+                    log.error("Error fetching user for transfer-back: {}", e.getMessage());
+                }
+
+                String domain = twilioProperties.getWebhookUrl();
+                if (domain == null || domain.isEmpty()) {
+                    domain = "http://localhost:8082";
+                }
+                if (domain.endsWith("/")) {
+                    domain = domain.substring(0, domain.length() - 1);
+                }
+
+                // Construct TwiML redirect URL
+                String redirectUrl = domain + "/ivr/twilio-webhook?userId=" + userId + "&callId=" + activeCall.getId() + "&Digits=1";
+                log.info("Redirecting Twilio call {} to secure payment TwiML: {}", activeCall.getId(), redirectUrl);
+
+                // Update Twilio call to redirect
+                com.twilio.rest.api.v2010.account.Call.updater(activeCall.getId())
+                        .setUrl(new java.net.URI(redirectUrl))
+                        .setMethod(com.twilio.http.HttpMethod.POST)
+                        .update();
+
+                return true;
+            } catch (Exception e) {
+                log.error("Failed to redirect real Twilio call to payment: {}", e.getMessage());
+                return false;
+            }
+        } else {
+            // Simulated call: handled on frontend. The REST API just returns success.
+            return true;
         }
     }
 
