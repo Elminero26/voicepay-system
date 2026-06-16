@@ -43,7 +43,6 @@ public class CampaignService {
         } else {
             commerce = commerceRepository.findById(commerceId)
                     .orElseGet(() -> commerceRepository.save(Commerce.builder()
-                            .id(commerceId)
                             .name("Comercio " + commerceId)
                             .email("commerce" + commerceId + "@voicepay.com")
                             .build()));
@@ -109,7 +108,11 @@ public class CampaignService {
         }
         
         campaign.setStatus(upperStatus);
-        return campaignRepository.save(campaign);
+        Campaign saved = campaignRepository.save(campaign);
+        if (saved.getCommerce() != null) {
+            saved.getCommerce().getName(); // force initialization of lazy proxy
+        }
+        return saved;
     }
 
     public Map<String, Object> getCampaignsReport() {

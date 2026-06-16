@@ -46,6 +46,30 @@ public class CampaignEntitiesTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private com.voicepay.userservice.service.CampaignService campaignService;
+
+    @Test
+    void testUpdateCampaignStatus() {
+        Commerce commerce = Commerce.builder()
+                .name("Comercio De Prueba")
+                .email("test@commerce.com")
+                .build();
+        commerce = commerceRepository.save(commerce);
+
+        Campaign campaign = Campaign.builder()
+                .name("Campaña Cobro Julio")
+                .startDate(LocalDateTime.now())
+                .status("ACTIVE")
+                .maxRetries(3)
+                .commerce(commerce)
+                .build();
+        campaign = campaignRepository.save(campaign);
+
+        Campaign updated = campaignService.updateCampaignStatus(campaign.getId(), "PAUSED");
+        assertEquals("PAUSED", updated.getStatus());
+    }
+
     @Test
     void testCreateCommerceCampaignAndMember() {
         // 1. Create a Commerce

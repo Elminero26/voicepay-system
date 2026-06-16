@@ -44,6 +44,7 @@ public class Campaign {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "commerce_id", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     @Schema(description = "Comercio asociado a la campaña")
     private Commerce commerce;
 }

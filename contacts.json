@@ -1,0 +1,12 @@
+[
+  {
+    "userId": 2,
+    "phoneNumber": "+34699887766",
+    "associatedDebt": 45.00
+  },
+  {
+    "userId": 3,
+    "phoneNumber": "+525512345678",
+    "associatedDebt": 89.90
+  }
+]
