@@ -21,6 +21,37 @@ import org.springframework.web.bind.annotation.*;
 public class CampaignController {
 
     private final CampaignMemberRepository campaignMemberRepository;
+    private final com.voicepay.userservice.service.CampaignService campaignService;
+
+    @PostMapping
+    @Operation(summary = "Crear nueva campaña", description = "Crea una campaña con sus miembros asociados.")
+    public ResponseEntity<com.voicepay.userservice.model.Campaign> createCampaign(@RequestBody com.voicepay.userservice.dto.CampaignRequest request) {
+        log.info("Request to create campaign: {}", request.getName());
+        com.voicepay.userservice.model.Campaign campaign = campaignService.createCampaign(
+                request.getName(),
+                request.getMaxRetries(),
+                request.getCommerceId(),
+                request.getMembers() != null ? request.getMembers() : java.util.Collections.emptyList()
+        );
+        return ResponseEntity.status(201).body(campaign);
+    }
+
+    @PutMapping("/{id}/status")
+    @Operation(summary = "Actualizar estado de campaña", description = "Actualiza el estado (ACTIVE, PAUSED, DRAFT, COMPLETED) de una campaña.")
+    public ResponseEntity<com.voicepay.userservice.model.Campaign> updateCampaignStatus(
+            @PathVariable long id,
+            @RequestParam String status) {
+        log.info("Request to update campaign {} status to {}", id, status);
+        com.voicepay.userservice.model.Campaign campaign = campaignService.updateCampaignStatus(id, status);
+        return ResponseEntity.ok(campaign);
+    }
+
+    @GetMapping("/reports")
+    @Operation(summary = "Obtener reporte agregador de campañas", description = "Devuelve estadísticas acumuladas e individuales de campañas.")
+    public ResponseEntity<java.util.Map<String, Object>> getCampaignsReport() {
+        log.info("Request to get campaigns report");
+        return ResponseEntity.ok(campaignService.getCampaignsReport());
+    }
 
     @GetMapping("/members/pending")
     @Operation(summary = "Obtener miembros pendientes", description = "Devuelve una página de miembros de campañas activas cuyo estado de llamada es PENDING.")

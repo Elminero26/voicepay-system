@@ -23,7 +23,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/h2-console/**", "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/payments/v3/api-docs/**", "/error", "/actuator/**", "/payments/exchange-rates/**", "/payments/reports/verify").permitAll()
-                .requestMatchers("/payments/**", "/subscriptions/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
+                .requestMatchers("/payments/**", "/subscriptions/**", "/api/campaigns/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

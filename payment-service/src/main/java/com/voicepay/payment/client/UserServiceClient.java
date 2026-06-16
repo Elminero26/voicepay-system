@@ -62,4 +62,56 @@ public class UserServiceClient {
         fallbackUser.put("name", "Usuario");
         return fallbackUser;
     }
+
+    @CircuitBreaker(name = "userService")
+    @Retry(name = "userService")
+    public Object createCampaign(Object campaignRequest, HttpHeaders headers) {
+        log.info("Calling User Service to create campaign");
+        String baseUrl = userServiceUrl;
+        if (baseUrl.endsWith("/users")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 6);
+        }
+        String url = baseUrl + "/campaigns";
+        HttpEntity<Object> entity = new HttpEntity<>(campaignRequest, headers);
+        return restTemplate.exchange(
+                url,
+                HttpMethod.POST,
+                entity,
+                Object.class).getBody();
+    }
+
+    @CircuitBreaker(name = "userService")
+    @Retry(name = "userService")
+    public Object updateCampaignStatus(Long campaignId, String status, HttpHeaders headers) {
+        log.info("Calling User Service to update campaign {} status to {}", campaignId, status);
+        String baseUrl = userServiceUrl;
+        if (baseUrl.endsWith("/users")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 6);
+        }
+        String url = baseUrl + "/campaigns/" + campaignId + "/status?status=" + status;
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        return restTemplate.exchange(
+                url,
+                HttpMethod.PUT,
+                entity,
+                Object.class).getBody();
+    }
+
+    @CircuitBreaker(name = "userService")
+    @Retry(name = "userService")
+    @SuppressWarnings("rawtypes")
+    public Map getCampaignsReport(HttpHeaders headers) {
+        log.info("Calling User Service to get campaign reports");
+        String baseUrl = userServiceUrl;
+        if (baseUrl.endsWith("/users")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 6);
+        }
+        String url = baseUrl + "/campaigns/reports";
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        return restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                Map.class).getBody();
+    }
 }
