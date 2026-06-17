@@ -4,10 +4,18 @@ import com.voicepay.ivr.dto.CallRequest;
 import com.voicepay.ivr.dto.IvrResponse;
 import com.voicepay.ivr.client.UserServiceClient;
 import com.voicepay.ivr.client.PaymentServiceClient;
+import com.voicepay.ivr.client.UserFeignClient;
+import com.voicepay.ivr.client.NotificationFeignClient;
+import com.voicepay.ivr.dto.OtpGenerateRequest;
+import com.voicepay.ivr.dto.OtpGenerateResponse;
+import com.voicepay.ivr.dto.OtpValidateRequest;
+import com.voicepay.ivr.dto.OtpValidateResponse;
+import com.voicepay.ivr.dto.NotificationDto;
 import com.voicepay.ivr.config.TwilioProperties;
 import com.voicepay.ivr.nlp.NlpClient;
 import com.voicepay.ivr.nlp.NlpResult;
 import com.voicepay.ivr.nlp.exception.FallbackIntentException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +42,12 @@ class IvrServiceTest {
     private PaymentServiceClient paymentServiceClient;
 
     @Mock
+    private UserFeignClient userFeignClient;
+
+    @Mock
+    private NotificationFeignClient notificationFeignClient;
+
+    @Mock
     private LiveCallBroadcaster broadcaster;
 
     @Mock
@@ -54,6 +68,7 @@ class IvrServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("dummy-token");
+        ReflectionTestUtils.setField(ivrService, "otpThreshold", 50.0);
     }
 
     @Test
@@ -473,5 +488,106 @@ class IvrServiceTest {
         assertThat(twiml).contains("<Redirect>");
         assertThat(twiml).contains("/ivr/twilio-call?From=%2B34666000111");
         assertThat(twiml).contains("CallSid=CA123456789");
+    }
+
+    @Test
+    @DisplayName("processUserOption — When amount > threshold, should generate OTP and pause payment, then complete on correct OTP")
+    void whenAmountAboveThreshold_thenOtpVerificationRequiredAndSuccessful() {
+        // 1. Setup incoming call to register it in liveCalls with amount 100.0 (above threshold 50)
+        CallRequest request = new CallRequest();
+        request.setFrom("+34666000111");
+
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("id", 1L);
+        userMap.put("name", "Cristian");
+        when(userServiceClient.getUserByPhone(eq("+34666000111"), any())).thenReturn(userMap);
+
+        Map<String, Object> paymentMap = new HashMap<>();
+        paymentMap.put("amount", 100.0);
+        when(paymentServiceClient.getPendingPayment(eq(1L), any())).thenReturn(paymentMap);
+
+        IvrResponse incomingRes = ivrService.handleIncomingCall(request);
+        assertThat(incomingRes.getNextAction()).isEqualTo("WAIT_FOR_INPUT");
+
+        // 2. Mock OTP Generation
+        OtpGenerateResponse otpRes = OtpGenerateResponse.builder()
+                .identifier("+34666000111")
+                .code("123456")
+                .expiryTime(java.time.LocalDateTime.now().plusMinutes(3))
+                .build();
+        when(userFeignClient.generateOtp(any(), any())).thenReturn(otpRes);
+        when(notificationFeignClient.sendNotification(any(), any())).thenReturn(new NotificationDto());
+
+        // 3. User selects Option "1" to pay
+        IvrResponse opt1Res = ivrService.processUserOption(1L, "1");
+        assertThat(opt1Res.getNextAction()).isEqualTo("WAIT_FOR_OTP");
+        assertThat(opt1Res.getMessage()).contains("supera el límite de seguridad");
+
+        // 4. Mock successful OTP validation
+        OtpValidateResponse valRes = OtpValidateResponse.builder()
+                .valid(true)
+                .message("OTP validado con éxito")
+                .build();
+        when(userFeignClient.validateOtp(any(), any())).thenReturn(valRes);
+        when(paymentServiceClient.confirmPayment(eq(1L), any())).thenReturn(new HashMap<>());
+
+        // 5. User enters correct OTP
+        IvrResponse optCodeRes = ivrService.processUserOption(1L, "123456");
+        assertThat(optCodeRes.getNextAction()).isEqualTo("HANGUP");
+        assertThat(optCodeRes.getMessage()).contains("procesado correctamente");
+
+        verify(userFeignClient, times(1)).generateOtp(any(), any());
+        verify(notificationFeignClient, times(1)).sendNotification(any(), any());
+        verify(userFeignClient, times(1)).validateOtp(any(), any());
+        verify(paymentServiceClient, times(1)).confirmPayment(eq(1L), any());
+    }
+
+    @Test
+    @DisplayName("processUserOption — When amount > threshold and user enters wrong OTP, should fail payment")
+    void whenAmountAboveThresholdAndWrongOtp_thenFailPayment() {
+        // 1. Setup incoming call to register it in liveCalls with amount 100.0 (above threshold 50)
+        CallRequest request = new CallRequest();
+        request.setFrom("+34666000111");
+
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("id", 1L);
+        userMap.put("name", "Cristian");
+        when(userServiceClient.getUserByPhone(eq("+34666000111"), any())).thenReturn(userMap);
+
+        Map<String, Object> paymentMap = new HashMap<>();
+        paymentMap.put("amount", 100.0);
+        when(paymentServiceClient.getPendingPayment(eq(1L), any())).thenReturn(paymentMap);
+
+        IvrResponse incomingRes = ivrService.handleIncomingCall(request);
+        assertThat(incomingRes.getNextAction()).isEqualTo("WAIT_FOR_INPUT");
+
+        // 2. Mock OTP Generation
+        OtpGenerateResponse otpRes = OtpGenerateResponse.builder()
+                .identifier("+34666000111")
+                .code("123456")
+                .expiryTime(java.time.LocalDateTime.now().plusMinutes(3))
+                .build();
+        when(userFeignClient.generateOtp(any(), any())).thenReturn(otpRes);
+        when(notificationFeignClient.sendNotification(any(), any())).thenReturn(new NotificationDto());
+
+        // 3. User selects Option "1" to pay
+        IvrResponse opt1Res = ivrService.processUserOption(1L, "1");
+        assertThat(opt1Res.getNextAction()).isEqualTo("WAIT_FOR_OTP");
+
+        // 4. Mock failed OTP validation
+        OtpValidateResponse valRes = OtpValidateResponse.builder()
+                .valid(false)
+                .message("Código OTP incorrecto")
+                .build();
+        when(userFeignClient.validateOtp(any(), any())).thenReturn(valRes);
+
+        // 5. User enters incorrect OTP
+        IvrResponse optCodeRes = ivrService.processUserOption(1L, "999999");
+        assertThat(optCodeRes.getNextAction()).isEqualTo("HANGUP");
+        assertThat(optCodeRes.getMessage()).contains("incorrecto");
+
+        verify(userFeignClient, times(1)).generateOtp(any(), any());
+        verify(userFeignClient, times(1)).validateOtp(any(), any());
+        verify(paymentServiceClient, never()).confirmPayment(anyLong(), any());
     }
 }

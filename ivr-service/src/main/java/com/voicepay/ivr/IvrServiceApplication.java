@@ -12,7 +12,10 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.servers.Server;
 
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
 @SpringBootApplication
+@EnableFeignClients
 @EnableConfigurationProperties(AppProperties.class)
 @OpenAPIDefinition(
 		info = @Info(title = "IVR Service API", version = "1.0", description = "Microservicio para gestionar el árbol de decisión interactivo del IVR, controlar llamadas Twilio reales y simuladas, registrar eventos en vivo de Speech-To-Text y almacenar el historial."),

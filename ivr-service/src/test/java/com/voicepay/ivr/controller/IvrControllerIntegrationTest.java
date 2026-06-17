@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -142,5 +143,40 @@ public class IvrControllerIntegrationTest {
                 .param("mock", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Llamada saliente iniciada."));
+    }
+
+    @Test
+    void handleTwilioWebhookOtp_ShouldReturnTwiML() throws Exception {
+        String mockTwiML = "<Response><Say>OTP validado con éxito</Say></Response>";
+        when(ivrService.handleTwilioWebhookOtp(anyLong(), anyString(), anyString(), anyString())).thenReturn(mockTwiML);
+
+        mockMvc.perform(post("/ivr/twilio-webhook-otp")
+                .param("userId", "3")
+                .param("callId", "CA123456789")
+                .param("Digits", "123456"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_XML))
+                .andExpect(content().string(mockTwiML));
+    }
+
+    @Test
+    void confirmPayment_WithOtpCode_ShouldReturnIvrResponse() throws Exception {
+        IvrResponse mockResponse = IvrResponse.builder()
+                .message("Gracias. Su pago ha sido procesado correctamente.")
+                .nextAction("HANGUP")
+                .build();
+        
+        when(ivrService.processUserOptionWithCallId(anyLong(), eq("123456"), any())).thenReturn(mockResponse);
+
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("userId", 3L);
+        payload.put("otpCode", "123456");
+
+        mockMvc.perform(post("/ivr/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Gracias. Su pago ha sido procesado correctamente."))
+                .andExpect(jsonPath("$.nextAction").value("HANGUP"));
     }
 }

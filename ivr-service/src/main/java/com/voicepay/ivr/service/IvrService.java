@@ -22,6 +22,14 @@ import java.util.Map;
 
 import com.voicepay.ivr.client.UserServiceClient;
 import com.voicepay.ivr.client.PaymentServiceClient;
+import com.voicepay.ivr.client.UserFeignClient;
+import com.voicepay.ivr.client.NotificationFeignClient;
+import com.voicepay.ivr.dto.OtpGenerateRequest;
+import com.voicepay.ivr.dto.OtpGenerateResponse;
+import com.voicepay.ivr.dto.OtpValidateRequest;
+import com.voicepay.ivr.dto.OtpValidateResponse;
+import com.voicepay.ivr.dto.NotificationDto;
+import org.springframework.beans.factory.annotation.Value;
 import com.voicepay.ivr.nlp.NlpClient;
 import com.voicepay.ivr.nlp.NlpResult;
 import com.voicepay.ivr.nlp.exception.FallbackIntentException;
@@ -34,6 +42,8 @@ public class IvrService {
 
     private final UserServiceClient userServiceClient;
     private final PaymentServiceClient paymentServiceClient;
+    private final UserFeignClient userFeignClient;
+    private final NotificationFeignClient notificationFeignClient;
     private final LiveCallBroadcaster broadcaster;
     private final com.voicepay.ivr.repository.LiveCallRepository callRepository;
     private final com.voicepay.ivr.repository.IvrFlowConfigRepository flowConfigRepository;
@@ -44,6 +54,9 @@ public class IvrService {
 
     private final com.voicepay.ivr.security.JwtUtil jwtUtil;
     private final NlpClient nlpClient;
+
+    @Value("${app.otp.threshold:50.0}")
+    private double otpThreshold;
     
     private final java.util.concurrent.ScheduledExecutorService scheduler = java.util.concurrent.Executors.newScheduledThreadPool(1);
 
@@ -145,8 +158,84 @@ public class IvrService {
         
         if (activeCall == null) {
             activeCall = liveCalls.values().stream()
-                    .filter(c -> c.getStatus().equals("WAITING_CONFIRMATION") || c.getStatus().equals("PROCESSING_PAYMENT"))
+                    .filter(c -> c.getStatus().equals("WAITING_CONFIRMATION") || c.getStatus().equals("PROCESSING_PAYMENT") || c.getStatus().equals("WAITING_OTP"))
                     .findFirst().orElse(null);
+        }
+
+        if (activeCall != null && "WAITING_OTP".equals(activeCall.getStatus())) {
+            activeCall.getCallEvents().add("Usuario ingresó OTP para simulación: " + digits);
+            activeCall.getCallEvents().add("Validando OTP contra el user-service...");
+            try {
+                OtpValidateRequest valReq = OtpValidateRequest.builder()
+                        .identifier(activeCall.getPhoneNumber())
+                        .code(digits)
+                        .build();
+                String authHeader = getHeadersWithJwt().getFirst("Authorization");
+                OtpValidateResponse valRes = userFeignClient.validateOtp(valReq, authHeader);
+                
+                if (valRes.isValid()) {
+                    activeCall.getCallEvents().add("OTP validado con éxito. Procesando pago...");
+                    activeCall.setStatus("PROCESSING_PAYMENT");
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                    
+                    paymentServiceClient.confirmPayment(userId, getHeadersWithJwt());
+                    
+                    activeCall.setStatus("COMPLETED");
+                    activeCall.getCallEvents().add("Pago confirmado con éxito en pasarela.");
+                    activeCall.getCallEvents().add("Llamando a Notification Service para enviar SMS/Push...");
+                    activeCall.setDuration(java.time.Duration.between(activeCall.getTimestamp(), java.time.LocalDateTime.now()).getSeconds());
+                    activeCall.setDirection(activeCall.getDirection() != null ? activeCall.getDirection() : "INBOUND");
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                    
+                    final String finalCallId = activeCall.getId();
+                    new java.util.Timer().schedule(new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+                            liveCalls.remove(finalCallId);
+                            broadcaster.broadcast(liveCalls.values());
+                        }
+                    }, 5000);
+                    
+                    String promptTemplate = getVoicePromptFromConfig("5", "Gracias. Su pago ha sido procesado correctamente. Le hemos enviado un mensaje de confirmación a su móvil. ¡Adiós!");
+                    String dynamicMessage = promptTemplate.replace("{name}", activeCall.getUserName()).replace("{amount}", String.valueOf(activeCall.getCallAmount()));
+                    return IvrResponse.builder()
+                            .message(dynamicMessage)
+                            .nextAction("HANGUP")
+                            .build();
+                } else {
+                    activeCall.setStatus("FAILED");
+                    activeCall.getCallEvents().add("Fallo en la validación del OTP: " + valRes.getMessage());
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                    
+                    final String finalCallId = activeCall.getId();
+                    new java.util.Timer().schedule(new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+                            liveCalls.remove(finalCallId);
+                            broadcaster.broadcast(liveCalls.values());
+                        }
+                    }, 5000);
+                    
+                    return IvrResponse.builder()
+                            .message("El código OTP introducido es incorrecto o ha expirado. Operación cancelada. ¡Adiós!")
+                            .nextAction("HANGUP")
+                            .build();
+                }
+            } catch (Exception e) {
+                log.error("Error validating OTP in simulation: {}", e.getMessage());
+                activeCall.setStatus("FAILED");
+                activeCall.getCallEvents().add("Error técnico al validar OTP: " + e.getMessage());
+                callRepository.save(activeCall);
+                broadcaster.broadcast(liveCalls.values());
+                
+                return IvrResponse.builder()
+                        .message("Hubo un error técnico al validar el código OTP. Operación cancelada. ¡Adiós!")
+                        .nextAction("HANGUP")
+                        .build();
+            }
         }
 
         if ("2".equals(digits)) {
@@ -164,6 +253,44 @@ public class IvrService {
                     .build();
         } else if ("1".equals(digits)) {
             if (activeCall != null) {
+                if (activeCall.getCallAmount() > otpThreshold) {
+                    activeCall.setStatus("WAITING_OTP");
+                    activeCall.setSelectedOption(digits);
+                    activeCall.getCallEvents().add("Usuario pulsó " + digits + ": El monto de " + activeCall.getCallAmount() + " EUR supera el umbral de " + otpThreshold + " EUR. Requiere validación de OTP.");
+                    activeCall.getCallEvents().add("Llamando a User Service para generar OTP...");
+                    
+                    try {
+                        OtpGenerateRequest req = OtpGenerateRequest.builder()
+                                .identifier(activeCall.getPhoneNumber())
+                                .length(6)
+                                .ttlMinutes(3)
+                                .build();
+                        String authHeader = getHeadersWithJwt().getFirst("Authorization");
+                        OtpGenerateResponse otpRes = userFeignClient.generateOtp(req, authHeader);
+                        activeCall.getCallEvents().add("Código OTP generado con éxito.");
+                        
+                        NotificationDto notif = NotificationDto.builder()
+                                .recipient(activeCall.getPhoneNumber())
+                                .message("Su codigo de seguridad de VoicePay para confirmar su pago de " + activeCall.getCallAmount() + " EUR es: " + otpRes.getCode() + ". No lo comparta con nadie.")
+                                .type("SMS")
+                                .build();
+                        notificationFeignClient.sendNotification(notif, authHeader);
+                        activeCall.getCallEvents().add("Notificación de OTP enviada al número " + activeCall.getPhoneNumber());
+                    } catch (Exception e) {
+                        log.error("Fallo al generar/notificar OTP en simulación: {}", e.getMessage());
+                        activeCall.getCallEvents().add("Error al generar/notificar OTP: " + e.getMessage());
+                    }
+                    
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                    
+                    return IvrResponse.builder()
+                            .message("El monto del pago supera el límite de seguridad. Le hemos enviado un código de verificación SMS a su móvil. Por favor, introduzca el código OTP.")
+                            .nextAction("WAIT_FOR_OTP")
+                            .userId(userId)
+                            .build();
+                }
+
                 activeCall.setStatus("PROCESSING_PAYMENT");
                 activeCall.setSelectedOption(digits);
                 activeCall.getCallEvents().add("Usuario pulsó " + digits + ": Iniciando confirmación de pago...");
@@ -572,6 +699,65 @@ public class IvrService {
             localFailedSpeechAttempts.remove(callId);
 
             if ("1".equals(resolvedOption)) {
+                double amount = call != null ? call.getCallAmount() : 25.00;
+                if (amount > otpThreshold) {
+                    if (call != null) {
+                        call.setStatus("WAITING_OTP");
+                        call.setSelectedOption(resolvedOption);
+                        call.getCallEvents().add("El monto de " + amount + " EUR supera el umbral de seguridad de " + otpThreshold + " EUR. Requiere validación de OTP.");
+                        call.getCallEvents().add("Llamando a User Service para generar OTP...");
+                        
+                        try {
+                            OtpGenerateRequest req = OtpGenerateRequest.builder()
+                                    .identifier(call.getPhoneNumber())
+                                    .length(6)
+                                    .ttlMinutes(3)
+                                    .build();
+                            String authHeader = getHeadersWithJwt().getFirst("Authorization");
+                            OtpGenerateResponse otpRes = userFeignClient.generateOtp(req, authHeader);
+                            call.getCallEvents().add("Código OTP generado con éxito.");
+                            
+                            NotificationDto notif = NotificationDto.builder()
+                                    .recipient(call.getPhoneNumber())
+                                    .message("Su codigo de seguridad de VoicePay para confirmar su pago de " + amount + " EUR es: " + otpRes.getCode() + ". No lo comparta con nadie.")
+                                    .type("SMS")
+                                    .build();
+                            notificationFeignClient.sendNotification(notif, authHeader);
+                            call.getCallEvents().add("Notificación de OTP enviada al número " + call.getPhoneNumber());
+                        } catch (Exception e) {
+                            log.error("Fallo al generar/notificar OTP en Twilio webhook: {}", e.getMessage());
+                            call.getCallEvents().add("Error al generar/notificar OTP: " + e.getMessage());
+                        }
+                        
+                        callRepository.save(call);
+                        broadcaster.broadcast(liveCalls.values());
+                    }
+                    
+                    String amountStr = String.format(java.util.Locale.US, "%.2f", amount);
+                    String otpPrompt = "Su pago de " + amountStr + " euros supera el límite de seguridad. Le hemos enviado un código de verificación por SMS. Por favor, introduzca el código de seis dígitos ahora.";
+                    
+                    String gatherUrl = baseUrl;
+                    if (gatherUrl == null || gatherUrl.isEmpty()) {
+                        gatherUrl = twilioProperties.getWebhookUrl();
+                    }
+                    if (gatherUrl == null || gatherUrl.isEmpty()) {
+                        gatherUrl = "http://localhost:8082";
+                    }
+                    if (gatherUrl.endsWith("/")) {
+                        gatherUrl = gatherUrl.substring(0, gatherUrl.length() - 1);
+                    }
+                    
+                    return new VoiceResponse.Builder()
+                            .gather(new Gather.Builder()
+                                    .inputs(java.util.Arrays.asList(Gather.Input.DTMF))
+                                    .numDigits(6)
+                                    .action(gatherUrl + "/ivr/twilio-webhook-otp?userId=" + userId + "&callId=" + callId)
+                                    .say(new Say.Builder(otpPrompt)
+                                            .language(Say.Language.ES_ES).build())
+                                    .build())
+                            .build().toXml();
+                }
+
                 String amountStr = "25.00";
                 if (call != null) {
                     call.setStatus("PROCESSING_PAYMENT");
@@ -660,6 +846,118 @@ public class IvrService {
                         .language(Say.Language.ES_ES).build())
                 .hangup(new Hangup.Builder().build())
                 .build().toXml();
+    }
+
+    public String handleTwilioWebhookOtp(Long userId, String callId, String digits, String baseUrl) {
+        log.info("Received Twilio OTP webhook: userId={}, callId={}, digits={}", userId, callId, digits);
+        
+        LiveCall activeCall = liveCalls.get(callId);
+        if (activeCall == null) {
+            activeCall = callRepository.findById(callId).orElse(null);
+        }
+        
+        if (activeCall != null) {
+            activeCall.getCallEvents().add("Código OTP ingresado vía DTMF: " + digits);
+        }
+        
+        try {
+            String identifier = activeCall != null ? activeCall.getPhoneNumber() : String.valueOf(userId);
+            OtpValidateRequest valReq = OtpValidateRequest.builder()
+                    .identifier(identifier)
+                    .code(digits)
+                    .build();
+            String authHeader = getHeadersWithJwt().getFirst("Authorization");
+            OtpValidateResponse valRes = userFeignClient.validateOtp(valReq, authHeader);
+            
+            if (valRes.isValid()) {
+                log.info("OTP validated successfully for user: {}", userId);
+                if (activeCall != null) {
+                    activeCall.getCallEvents().add("OTP validado con éxito. Iniciando cobro seguro vía Twilio Pay...");
+                    activeCall.setStatus("PROCESSING_PAYMENT");
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                }
+                
+                String amountStr = "25.00";
+                if (activeCall != null) {
+                    amountStr = String.format(java.util.Locale.US, "%.2f", activeCall.getCallAmount());
+                }
+                
+                String connectorName = twilioProperties.getPaymentConnector();
+                if (connectorName == null || connectorName.isEmpty()) {
+                    connectorName = "stripe_connector";
+                }
+                String actionUrl = baseUrl + "/ivr/twilio-pay-action?userId=" + userId;
+                
+                Prompt cardPrompt = new Prompt.Builder()
+                        .for_(Prompt.For.PAYMENT_CARD_NUMBER)
+                        .say(new Say.Builder("Por favor, introduzca los dieciséis dígitos de su tarjeta de crédito.")
+                                .language(Say.Language.ES_ES).build())
+                        .build();
+
+                Prompt expiryPrompt = new Prompt.Builder()
+                        .for_(Prompt.For.EXPIRATION_DATE)
+                        .say(new Say.Builder("Introduzca la fecha de caducidad con dos dígitos para el mes y dos para el año. Por ejemplo, doce veintiséis.")
+                                .language(Say.Language.ES_ES).build())
+                        .build();
+
+                Prompt cvcPrompt = new Prompt.Builder()
+                        .for_(Prompt.For.SECURITY_CODE)
+                        .say(new Say.Builder("Por favor, introduzca el código de seguridad de tres dígitos al dorso de su tarjeta.")
+                                .language(Say.Language.ES_ES).build())
+                        .build();
+
+                Pay pay = new Pay.Builder()
+                        .paymentConnector(connectorName)
+                        .chargeAmount(amountStr)
+                        .currency("eur")
+                        .action(actionUrl)
+                        .prompt(cardPrompt)
+                        .prompt(expiryPrompt)
+                        .prompt(cvcPrompt)
+                        .build();
+
+                return new VoiceResponse.Builder()
+                        .pay(pay)
+                        .build().toXml();
+            } else {
+                log.warn("OTP validation failed: {}", valRes.getMessage());
+                if (activeCall != null) {
+                    activeCall.setStatus("FAILED");
+                    activeCall.getCallEvents().add("Fallo en validación de OTP: " + valRes.getMessage());
+                    callRepository.save(activeCall);
+                    broadcaster.broadcast(liveCalls.values());
+                    
+                    final String finalCallId = activeCall.getId();
+                    new java.util.Timer().schedule(new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+                            liveCalls.remove(finalCallId);
+                            broadcaster.broadcast(liveCalls.values());
+                        }
+                    }, 5000);
+                }
+                
+                return new VoiceResponse.Builder()
+                        .say(new Say.Builder("El código OTP es incorrecto. La operación ha sido cancelada. ¡Adiós!")
+                                .language(Say.Language.ES_ES).build())
+                        .hangup(new Hangup.Builder().build())
+                        .build().toXml();
+            }
+        } catch (Exception e) {
+            log.error("Error validating OTP in Twilio webhook: {}", e.getMessage());
+            if (activeCall != null) {
+                activeCall.setStatus("FAILED");
+                activeCall.getCallEvents().add("Error técnico en validación de OTP: " + e.getMessage());
+                callRepository.save(activeCall);
+                broadcaster.broadcast(liveCalls.values());
+            }
+            return new VoiceResponse.Builder()
+                    .say(new Say.Builder("Hubo un error técnico al validar su código de seguridad. La operación ha sido cancelada. ¡Adiós!")
+                            .language(Say.Language.ES_ES).build())
+                    .hangup(new Hangup.Builder().build())
+                    .build().toXml();
+        }
     }
 
 
@@ -884,41 +1182,134 @@ public class IvrService {
                 }
             }, 3, java.util.concurrent.TimeUnit.SECONDS);
 
-            scheduler.schedule(() -> {
-                LiveCall c = liveCalls.get(simCallId);
-                if (c != null && "WAITING_CONFIRMATION".equals(c.getStatus())) {
-                    c.setStatus("PROCESSING_PAYMENT");
-                    c.setSelectedOption("1");
-                    c.getCallEvents().add("DTMF detectado: Usuario pulsó '1' (Confirmar Pago).");
-                    c.getCallEvents().add("Llamando a Payment Service (/confirm) para procesar...");
-                    callRepository.save(c);
-                    broadcaster.broadcast(liveCalls.values());
-                    
-                    try {
-                        paymentServiceClient.confirmPayment(finalUserId, getHeadersWithJwt());
-                        c.setStatus("COMPLETED");
-                        c.getCallEvents().add("Pago confirmado con éxito en la pasarela de pagos.");
-                        c.getCallEvents().add("Notificación enviada a Notification Service (SMS enviado).");
-                        c.getCallEvents().add("Reproduciendo despedida: 'Gracias. Su pago ha sido procesado correctamente...'");
-                        c.getCallEvents().add("Llamada finalizada correctamente. Línea liberada.");
-                        c.setDuration(12L);
-                        updateCampaignMemberCallStatus(campaignMemberId, "COMPLETED");
-                    } catch (Exception e) {
-                        c.setStatus("FAILED");
-                        c.getCallEvents().add("Error al confirmar el pago en la pasarela: " + e.getMessage());
-                        c.getCallEvents().add("Llamada finalizada con error.");
-                        updateCampaignMemberCallStatus(campaignMemberId, "FAILED");
-                    }
-                    callRepository.save(c);
-                    broadcaster.broadcast(liveCalls.values());
-                }
-            }, 9, java.util.concurrent.TimeUnit.SECONDS);
+            if (amount > otpThreshold) {
+                final java.util.concurrent.atomic.AtomicReference<String> generatedOtpRef = new java.util.concurrent.atomic.AtomicReference<>("123456");
 
-            scheduler.schedule(() -> {
-                liveCalls.remove(simCallId);
-                broadcaster.broadcast(liveCalls.values());
-                log.info("Simulated background call {} cleaned up.", simCallId);
-            }, 14, java.util.concurrent.TimeUnit.SECONDS);
+                scheduler.schedule(() -> {
+                    LiveCall c = liveCalls.get(simCallId);
+                    if (c != null && "WAITING_CONFIRMATION".equals(c.getStatus())) {
+                        c.setStatus("WAITING_OTP");
+                        c.setSelectedOption("1");
+                        c.getCallEvents().add("DTMF detectado: Usuario pulsó '1' (Confirmar Pago).");
+                        c.getCallEvents().add("El monto de " + finalAmount + " EUR supera el umbral de seguridad de " + otpThreshold + " EUR. Requiere validación de OTP.");
+                        c.getCallEvents().add("Llamando a User Service para generar OTP...");
+                        
+                        try {
+                            OtpGenerateRequest req = OtpGenerateRequest.builder()
+                                    .identifier(c.getPhoneNumber())
+                                    .length(6)
+                                    .ttlMinutes(3)
+                                    .build();
+                            String authHeader = getHeadersWithJwt().getFirst("Authorization");
+                            OtpGenerateResponse otpRes = userFeignClient.generateOtp(req, authHeader);
+                            generatedOtpRef.set(otpRes.getCode());
+                            c.getCallEvents().add("Código OTP generado con éxito.");
+                            
+                            NotificationDto notif = NotificationDto.builder()
+                                    .recipient(c.getPhoneNumber())
+                                    .message("Su codigo de seguridad de VoicePay para confirmar su pago de " + finalAmount + " EUR es: " + otpRes.getCode() + ". No lo comparta con nadie.")
+                                    .type("SMS")
+                                    .build();
+                            notificationFeignClient.sendNotification(notif, authHeader);
+                            c.getCallEvents().add("Notificación de OTP enviada al número " + c.getPhoneNumber());
+                        } catch (Exception e) {
+                            log.error("Fallo al generar/notificar OTP en simulación: {}", e.getMessage());
+                            c.getCallEvents().add("Error al generar/notificar OTP en simulación: " + e.getMessage());
+                        }
+                        
+                        c.getCallEvents().add("Esperando a que el usuario introduzca el código OTP de 6 dígitos...");
+                        callRepository.save(c);
+                        broadcaster.broadcast(liveCalls.values());
+                    }
+                }, 9, java.util.concurrent.TimeUnit.SECONDS);
+
+                scheduler.schedule(() -> {
+                    LiveCall c = liveCalls.get(simCallId);
+                    if (c != null && "WAITING_OTP".equals(c.getStatus())) {
+                        c.getCallEvents().add("Usuario digitó código OTP recibido.");
+                        c.getCallEvents().add("Llamando a User Service para validar OTP...");
+                        
+                        try {
+                            String authHeader = getHeadersWithJwt().getFirst("Authorization");
+                            OtpValidateRequest valReq = OtpValidateRequest.builder()
+                                    .identifier(c.getPhoneNumber())
+                                    .code(generatedOtpRef.get())
+                                    .build();
+                            OtpValidateResponse valRes = userFeignClient.validateOtp(valReq, authHeader);
+                            
+                            if (valRes.isValid()) {
+                                c.getCallEvents().add("OTP validado con éxito. Procesando pago...");
+                                c.setStatus("PROCESSING_PAYMENT");
+                                callRepository.save(c);
+                                broadcaster.broadcast(liveCalls.values());
+                                
+                                paymentServiceClient.confirmPayment(finalUserId, getHeadersWithJwt());
+                                c.setStatus("COMPLETED");
+                                c.getCallEvents().add("Pago confirmado con éxito en la pasarela de pagos.");
+                                c.getCallEvents().add("Notificación enviada a Notification Service (SMS enviado).");
+                                c.getCallEvents().add("Reproduciendo despedida: 'Gracias. Su pago ha sido procesado correctamente...'");
+                                c.getCallEvents().add("Llamada finalizada correctamente. Línea liberada.");
+                                c.setDuration(12L);
+                                updateCampaignMemberCallStatus(campaignMemberId, "COMPLETED");
+                            } else {
+                                c.setStatus("FAILED");
+                                c.getCallEvents().add("Fallo en la validación del OTP: " + valRes.getMessage());
+                                c.getCallEvents().add("Llamada finalizada con error.");
+                                updateCampaignMemberCallStatus(campaignMemberId, "FAILED");
+                            }
+                        } catch (Exception e) {
+                            c.setStatus("FAILED");
+                            c.getCallEvents().add("Error al validar OTP o confirmar el pago: " + e.getMessage());
+                            c.getCallEvents().add("Llamada finalizada con error.");
+                            updateCampaignMemberCallStatus(campaignMemberId, "FAILED");
+                        }
+                        callRepository.save(c);
+                        broadcaster.broadcast(liveCalls.values());
+                    }
+                }, 14, java.util.concurrent.TimeUnit.SECONDS);
+
+                scheduler.schedule(() -> {
+                    liveCalls.remove(simCallId);
+                    broadcaster.broadcast(liveCalls.values());
+                    log.info("Simulated background call {} cleaned up.", simCallId);
+                }, 19, java.util.concurrent.TimeUnit.SECONDS);
+            } else {
+                scheduler.schedule(() -> {
+                    LiveCall c = liveCalls.get(simCallId);
+                    if (c != null && "WAITING_CONFIRMATION".equals(c.getStatus())) {
+                        c.setStatus("PROCESSING_PAYMENT");
+                        c.setSelectedOption("1");
+                        c.getCallEvents().add("DTMF detectado: Usuario pulsó '1' (Confirmar Pago).");
+                        c.getCallEvents().add("Llamando a Payment Service (/confirm) para procesar...");
+                        callRepository.save(c);
+                        broadcaster.broadcast(liveCalls.values());
+                        
+                        try {
+                            paymentServiceClient.confirmPayment(finalUserId, getHeadersWithJwt());
+                            c.setStatus("COMPLETED");
+                            c.getCallEvents().add("Pago confirmado con éxito en la pasarela de pagos.");
+                            c.getCallEvents().add("Notificación enviada a Notification Service (SMS enviado).");
+                            c.getCallEvents().add("Reproduciendo despedida: 'Gracias. Su pago ha sido procesado correctamente...'");
+                            c.getCallEvents().add("Llamada finalizada correctamente. Línea liberada.");
+                            c.setDuration(12L);
+                            updateCampaignMemberCallStatus(campaignMemberId, "COMPLETED");
+                        } catch (Exception e) {
+                            c.setStatus("FAILED");
+                            c.getCallEvents().add("Error al confirmar el pago en la pasarela: " + e.getMessage());
+                            c.getCallEvents().add("Llamada finalizada con error.");
+                            updateCampaignMemberCallStatus(campaignMemberId, "FAILED");
+                        }
+                        callRepository.save(c);
+                        broadcaster.broadcast(liveCalls.values());
+                    }
+                }, 9, java.util.concurrent.TimeUnit.SECONDS);
+
+                scheduler.schedule(() -> {
+                    liveCalls.remove(simCallId);
+                    broadcaster.broadcast(liveCalls.values());
+                    log.info("Simulated background call {} cleaned up.", simCallId);
+                }, 14, java.util.concurrent.TimeUnit.SECONDS);
+            }
 
             return IvrResponse.builder()
                     .message("Llamada interactiva de simulación iniciada de fondo. Observa el dashboard en vivo.")

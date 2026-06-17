@@ -34,6 +34,10 @@ public class IvrController {
     public IvrResponse confirmPayment(@RequestBody java.util.Map<String, Object> payload) {
         Long userId = Long.valueOf(payload.get("userId").toString());
         String option = payload.containsKey("option") ? payload.get("option").toString() : "1";
+        String otpCode = payload.containsKey("otpCode") ? payload.get("otpCode").toString() : (payload.containsKey("otp") ? payload.get("otp").toString() : null);
+        if (otpCode != null) {
+            return ivrService.processUserOptionWithCallId(userId, otpCode, null);
+        }
         return ivrService.processUserOption(userId, option);
     }
 
@@ -83,6 +87,25 @@ public class IvrController {
         }
         String baseUrl = scheme + "://" + host;
         return ivrService.handleTwilioWebhook(userId, callId, digits != null ? digits : "", speechResult != null ? speechResult : "", unstableSpeechResult != null ? unstableSpeechResult : "", baseUrl);
+    }
+
+    @RequestMapping(value = "/twilio-webhook-otp", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
+    @Operation(summary = "Capturar dígitos de OTP en Twilio", description = "Procesa el código OTP digitado por el usuario en su teléfono.")
+    public String handleTwilioWebhookOtp(
+            @RequestParam("userId") Long userId,
+            @RequestParam("callId") String callId,
+            @RequestParam(value = "Digits", required = false) String digits,
+            jakarta.servlet.http.HttpServletRequest request) {
+        String scheme = request.getHeader("X-Forwarded-Proto");
+        if (scheme == null) {
+            scheme = request.getScheme();
+        }
+        String host = request.getHeader("X-Forwarded-Host");
+        if (host == null) {
+            host = request.getHeader("Host");
+        }
+        String baseUrl = scheme + "://" + host;
+        return ivrService.handleTwilioWebhookOtp(userId, callId, digits != null ? digits : "", baseUrl);
     }
 
     @RequestMapping(value = "/twilio-pay-action", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/xml")
