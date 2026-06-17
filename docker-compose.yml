@@ -54,7 +54,7 @@ services:
       vault kv put secret/user-service app.encryption-key=v0ic3P4yS3cur3Key2026Encryption! jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure google.client-secret=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 microsoft.client-secret=YOUR_MICROSOFT_CLIENT_SECRET spring.datasource.password=ToPo12345@;
       vault kv put secret/payment-service app.encryption-key=v0ic3P4yS3cur3Key2026Encryption! jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@;
       vault kv put secret/ivr-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@ twilio.auth-token=TOKEN_PLACEHOLDER;
-      vault kv put secret/notification-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@;
+      vault kv put secret/notification-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure spring.datasource.password=ToPo12345@ twilio.account-sid=AC_PLACEHOLDER twilio.auth-token=TOKEN_PLACEHOLDER twilio.phone-number=+10000000000 twilio.whatsapp-number=+10000000000 twilio.whatsapp-enabled=false;
       vault kv put secret/gateway-service jwt.secret=MySuperSecretKeyForVoicePayMicroservicesShouldBeVeryLongAndSecure;
       echo 'Vault initialization complete';
       "
