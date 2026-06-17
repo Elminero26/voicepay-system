@@ -34,7 +34,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "app.notification-service.url=http://localhost:8083/notifications"
 })
 @AutoConfigureMockMvc(addFilters = false)
-@SuppressWarnings("null")
 public class CampaignAdminControllerTest {
 
     @Autowired
