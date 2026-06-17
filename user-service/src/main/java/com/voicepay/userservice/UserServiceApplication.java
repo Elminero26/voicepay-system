@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.servers.Server;
 
 @SpringBootApplication
 @EnableConfigurationProperties(AppProperties.class)
+@org.springframework.scheduling.annotation.EnableScheduling
 @OpenAPIDefinition(
 		info = @Info(title = "User Service API", version = "1.0", description = "Microservicio para la gestión de usuarios, roles y autenticación (incluyendo OAuth2 y JWT)."),
 		servers = @Server(url = "${app.gateway.url:http://localhost:9000}", description = "API Gateway"),
