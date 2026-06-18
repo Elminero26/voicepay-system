@@ -7,6 +7,7 @@ import com.voicepay.payment.model.Subscription;
 import com.voicepay.payment.repository.PaymentRepository;
 import com.voicepay.payment.repository.SubscriptionRepository;
 import com.voicepay.payment.security.JwtUtil;
+import com.voicepay.payment.config.AppProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -33,6 +34,7 @@ public class SubscriptionService {
     private final NotificationServiceClient notificationServiceClient;
     private final JwtUtil jwtUtil;
     private final CurrencyExchangeService currencyExchangeService;
+    private final AppProperties appProperties;
 
     private HttpHeaders getHeadersWithJwt() {
         HttpHeaders headers = new HttpHeaders();
@@ -105,22 +107,66 @@ public class SubscriptionService {
     public void processDueSubscriptions() {
         LocalDateTime now = LocalDateTime.now();
         log.info("Finding due active subscriptions up to: {}", now);
-        List<Subscription> dueSubscriptions = subscriptionRepository.findByStatusAndNextPaymentDateBefore(
+        List<Subscription> dueActiveSubscriptions = subscriptionRepository.findByStatusAndNextPaymentDateBefore(
                 Subscription.SubscriptionStatus.ACTIVE, now);
 
-        log.info("Found {} due subscriptions to process.", dueSubscriptions.size());
+        log.info("Finding past due subscriptions...");
+        List<Subscription> pastDueSubscriptions = subscriptionRepository.findByStatus(
+                Subscription.SubscriptionStatus.PAST_DUE);
 
-        for (Subscription sub : dueSubscriptions) {
+        List<Subscription> duePastDue = pastDueSubscriptions.stream()
+                .filter(sub -> isPastDueRetryDue(sub, now))
+                .toList();
+
+        log.info("Found {} active due subscriptions and {} past due subscriptions ready for retry.",
+                dueActiveSubscriptions.size(), duePastDue.size());
+
+        for (Subscription sub : dueActiveSubscriptions) {
             try {
                 processSingleRecurringPayment(sub);
             } catch (Exception e) {
                 log.error("Error processing recurring payment for subscription ID {}: {}", sub.getId(), e.getMessage());
             }
         }
+
+        for (Subscription sub : duePastDue) {
+            try {
+                processSingleRecurringPayment(sub);
+            } catch (Exception e) {
+                log.error("Error processing retry payment for past due subscription ID {}: {}", sub.getId(), e.getMessage());
+            }
+        }
+    }
+
+    private boolean isPastDueRetryDue(Subscription sub, LocalDateTime now) {
+        if (sub.getLastAttemptDate() == null) {
+            return true;
+        }
+        int retryCount = sub.getRetryCount() != null ? sub.getRetryCount() : 0;
+        int delayDays = getRetryDelayDays(retryCount);
+        LocalDateTime nextRetryDate = sub.getLastAttemptDate().plusDays(delayDays);
+        return nextRetryDate.isBefore(now) || nextRetryDate.isEqual(now);
+    }
+
+    private int getRetryDelayDays(int retryCount) {
+        if (appProperties == null || appProperties.getDunning() == null || appProperties.getDunning().getRetryDelaysDays() == null) {
+            return (int) Math.pow(2, retryCount + 1) - 1;
+        }
+        List<Integer> delays = appProperties.getDunning().getRetryDelaysDays();
+        if (retryCount < 0) {
+            return 1;
+        }
+        if (retryCount < delays.size()) {
+            return delays.get(retryCount);
+        }
+        return (int) Math.pow(2, retryCount + 1) - 1;
     }
 
     private void processSingleRecurringPayment(Subscription sub) {
-        log.info("Processing recurring payment for subscription ID: {}, User ID: {}", sub.getId(), sub.getUserId());
+        log.info("Processing recurring payment for subscription ID: {}, User ID: {}, Status: {}", 
+                sub.getId(), sub.getUserId(), sub.getStatus());
+
+        Subscription.SubscriptionStatus originalStatus = sub.getStatus();
 
         // 1. Validar cobro automático (validar si el usuario sigue existiendo y es válido)
         boolean userValid = false;
@@ -168,14 +214,23 @@ public class SubscriptionService {
                 .description(sub.getDescription() != null ? sub.getDescription() : "Cobro periódico de suscripción")
                 .build();
 
+        LocalDateTime now = LocalDateTime.now();
+
         if (paymentSuccess) {
             log.info("Recurring payment succeeded for subscription ID: {}", sub.getId());
             payment.setStatus(Payment.PaymentStatus.COMPLETED);
             payment.setTransactionId("TX-SUB-" + System.currentTimeMillis());
 
             // Actualizar suscripción
-            sub.setLastPaymentDate(LocalDateTime.now());
-            sub.setNextPaymentDate(calculateNextPaymentDate(sub.getNextPaymentDate(), sub.getPeriodicity()));
+            sub.setStatus(Subscription.SubscriptionStatus.ACTIVE);
+            sub.setRetryCount(0);
+            sub.setLastAttemptDate(null);
+            sub.setLastPaymentDate(now);
+            
+            // Si la suscripción estaba PAST_DUE, se avanza la fecha del próximo pago a partir del momento del cobro exitoso (now).
+            // Si era ACTIVE, se avanza a partir de la fecha del próximo pago planificada para no desfasar el ciclo de facturación.
+            LocalDateTime baseDate = (originalStatus == Subscription.SubscriptionStatus.PAST_DUE) ? now : sub.getNextPaymentDate();
+            sub.setNextPaymentDate(calculateNextPaymentDate(baseDate, sub.getPeriodicity()));
 
             paymentRepository.save(payment);
             subscriptionRepository.save(sub);
@@ -190,18 +245,39 @@ public class SubscriptionService {
             payment.setStatus(Payment.PaymentStatus.FAILED);
             payment.setTransactionId("TX-SUB-FAILED-" + System.currentTimeMillis());
 
-            // En caso de fallo, para este demo avanzamos el ciclo de pago para no entrar en bucle infinito del scheduler,
-            // pero en producción se podría dejar pendiente o reintentar. Avanzamos el pago y notificamos el fallo.
-            sub.setNextPaymentDate(calculateNextPaymentDate(sub.getNextPaymentDate(), sub.getPeriodicity()));
-
             paymentRepository.save(payment);
-            subscriptionRepository.save(sub);
 
-            String notifMsg = "ATENCIÓN: El cobro automático de su suscripción por " + sub.getAmount() + " " + sub.getCurrency() + " ha fallado. Por favor, revise sus métodos de pago.";
-            if (!"EUR".equalsIgnoreCase(sub.getCurrency())) {
-                notifMsg += " (Cobro intentado por " + sub.getAmount() + " " + sub.getCurrency() + ", Equivalente a " + convertedAmount + " EUR)";
+            int currentRetryCount = sub.getRetryCount() != null ? sub.getRetryCount() : 0;
+            int maxRetries = sub.getMaxRetries() != null ? sub.getMaxRetries() : 3;
+
+            if (originalStatus == Subscription.SubscriptionStatus.ACTIVE) {
+                // Primer fallo: pasa a PAST_DUE
+                sub.setStatus(Subscription.SubscriptionStatus.PAST_DUE);
+                sub.setRetryCount(0); // 0 reintentos previos realizados
+                sub.setLastAttemptDate(now);
+                subscriptionRepository.save(sub);
+
+                String notifMsg = "ATENCIÓN: El cobro automático de su suscripción por " + sub.getAmount() + " " + sub.getCurrency() + " ha fallado. Su suscripción está en estado PAST_DUE y se reintentará.";
+                sendNotification(sub, notifMsg);
+            } else if (originalStatus == Subscription.SubscriptionStatus.PAST_DUE) {
+                // Reintento fallido
+                int newRetryCount = currentRetryCount + 1;
+                sub.setRetryCount(newRetryCount);
+                sub.setLastAttemptDate(now);
+
+                if (newRetryCount >= maxRetries) {
+                    sub.setStatus(Subscription.SubscriptionStatus.CANCELLED);
+                    subscriptionRepository.save(sub);
+
+                    String notifMsg = "SU SUSCRIPCIÓN HA SIDO CANCELADA debido a reiterados fallos de pago tras " + maxRetries + " intentos.";
+                    sendNotification(sub, notifMsg);
+                } else {
+                    subscriptionRepository.save(sub);
+
+                    String notifMsg = "Reintento de cobro fallido (" + newRetryCount + "/" + maxRetries + "). Se intentará nuevamente más tarde.";
+                    sendNotification(sub, notifMsg);
+                }
             }
-            sendNotification(sub, notifMsg);
         }
     }
 
