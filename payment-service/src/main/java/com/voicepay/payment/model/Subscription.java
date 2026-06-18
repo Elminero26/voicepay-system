@@ -48,6 +48,14 @@ public class Subscription {
 
     private String gatewayCustomerToken;
 
+    @Builder.Default
+    private Integer retryCount = 0;
+
+    @Builder.Default
+    private Integer maxRetries = 3;
+
+    private LocalDateTime lastAttemptDate;
+
     private LocalDateTime createdAt;
 
     @PrePersist
@@ -56,6 +64,12 @@ public class Subscription {
         if (status == null) {
             status = SubscriptionStatus.ACTIVE;
         }
+        if (retryCount == null) {
+            retryCount = 0;
+        }
+        if (maxRetries == null) {
+            maxRetries = 3;
+        }
     }
 
     public enum Periodicity {
@@ -63,6 +77,6 @@ public class Subscription {
     }
 
     public enum SubscriptionStatus {
-        ACTIVE, CANCELLED
+        ACTIVE, PAST_DUE, PAUSED, CANCELLED
     }
 }
