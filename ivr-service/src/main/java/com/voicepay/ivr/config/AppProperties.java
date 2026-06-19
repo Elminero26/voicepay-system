@@ -15,6 +15,14 @@ public class AppProperties {
     @NestedConfigurationProperty
     private Scheduler scheduler = new Scheduler();
 
+    private String userServiceBaseUrl;
+
+    @NestedConfigurationProperty
+    private NotificationService notificationService = new NotificationService();
+
+    @NestedConfigurationProperty
+    private Otp otp = new Otp();
+
     @Data
     public static class Scheduler {
         private String cron = "0/20 * * * * ?";
@@ -32,5 +40,15 @@ public class AppProperties {
             private String start = "09:00";
             private String end = "21:00";
         }
+    }
+
+    @Data
+    public static class NotificationService {
+        private String url;
+    }
+
+    @Data
+    public static class Otp {
+        private Double threshold;
     }
 }

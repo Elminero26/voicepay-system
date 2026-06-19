@@ -49,6 +49,21 @@
       "name": "app.scheduler.timezone-fallback",
       "type": "java.lang.String",
       "description": "Timezone fallback when member timezone is not specified."
+    },
+    {
+      "name": "app.user-service-base-url",
+      "type": "java.lang.String",
+      "description": "Base URL of the user service for OTP operations."
+    },
+    {
+      "name": "app.notification-service.url",
+      "type": "java.lang.String",
+      "description": "Base URL of the notification service for OTP operations."
+    },
+    {
+      "name": "app.otp.threshold",
+      "type": "java.lang.Double",
+      "description": "Security threshold amount above which OTP validation is required."
     }
   ]
 }
