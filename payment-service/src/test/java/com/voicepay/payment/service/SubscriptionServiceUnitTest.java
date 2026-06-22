@@ -81,6 +81,12 @@ public class SubscriptionServiceUnitTest {
         lenient().when(currencyExchangeService.getRate(anyString())).thenReturn(BigDecimal.ONE);
         lenient().when(currencyExchangeService.convert(any(), anyString(), anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+
+        java.util.Map<String, Object> userMap = new java.util.HashMap<>();
+        userMap.put("name", "Test User");
+        userMap.put("email", "test@example.com");
+        userMap.put("phoneNumber", "+34600123456");
+        lenient().when(userServiceClient.getUserDetails(anyLong(), any())).thenReturn(userMap);
     }
 
     @Test
@@ -173,6 +179,7 @@ public class SubscriptionServiceUnitTest {
         assertEquals(0, activeSubscription.getRetryCount());
         assertNotNull(activeSubscription.getLastAttemptDate());
         verify(subscriptionRepository, times(1)).save(any(Subscription.class));
+        verify(notificationServiceClient, times(1)).sendDunningNotification(any(), any());
     }
 
     @Test
@@ -203,6 +210,7 @@ public class SubscriptionServiceUnitTest {
         assertEquals(Subscription.SubscriptionStatus.PAST_DUE, pastDueSub.getStatus());
         assertEquals(1, pastDueSub.getRetryCount());
         verify(subscriptionRepository, times(1)).save(any(Subscription.class));
+        verify(notificationServiceClient, times(1)).sendDunningNotification(any(), any());
     }
 
     @Test
@@ -234,6 +242,7 @@ public class SubscriptionServiceUnitTest {
         assertEquals(Subscription.SubscriptionStatus.CANCELLED, pastDueSub.getStatus());
         assertEquals(3, pastDueSub.getRetryCount());
         verify(subscriptionRepository, times(1)).save(any(Subscription.class));
+        verify(notificationServiceClient, times(1)).sendDunningNotification(any(), any());
     }
 
     @Test

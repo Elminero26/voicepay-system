@@ -34,4 +34,10 @@ public class NotificationController {
     public Notification sendNotification(@RequestBody Notification notification) {
         return notificationService.sendNotification(notification);
     }
+
+    @PostMapping("/dunning")
+    @Operation(summary = "Enviar notificación de cobro fallido o suspensión", description = "Genera y envía plantillas de correo y SMS personalizadas al fallar transacciones.")
+    public List<Notification> sendDunningNotification(@RequestBody com.voicepay.notification.dto.DunningNotificationRequest request) {
+        return notificationService.sendDunningNotification(request);
+    }
 }

@@ -34,4 +34,16 @@ public class NotificationServiceClient {
         log.error("Fallback triggered for sendNotification due to error: {}. Notification content: {}", t.getMessage(), notificationRequest);
         // La notificación es no-bloqueante y secundaria, así que no propagamos el error para no abortar el flujo principal de pago.
     }
+
+    @CircuitBreaker(name = "notificationService", fallbackMethod = "fallbackSendDunningNotification")
+    @Retry(name = "notificationService")
+    public void sendDunningNotification(Map<String, Object> dunningRequest, HttpHeaders headers) {
+        log.info("Calling Notification Service to send dunning notification");
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(dunningRequest, headers);
+        restTemplate.postForEntity(notificationServiceUrl + "/dunning", request, String.class);
+    }
+
+    public void fallbackSendDunningNotification(Map<String, Object> dunningRequest, HttpHeaders headers, Throwable t) {
+        log.error("Fallback triggered for sendDunningNotification due to error: {}. Dunning request content: {}", t.getMessage(), dunningRequest);
+    }
 }

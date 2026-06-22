@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.ArrayList;
+import com.voicepay.notification.dto.DunningNotificationRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -93,6 +95,70 @@ public class NotificationService {
         }
         // Mask 4 to 6 digit numeric verification codes
         return message.replaceAll("\\b\\d{4,6}\\b", "******");
+    }
+
+    public List<Notification> sendDunningNotification(DunningNotificationRequest request) {
+        log.info("Processing dunning notification request for event: {} (client: {}, subscription: {})", 
+                 request.getEventType(), request.getClientName(), request.getSubscriptionName());
+
+        List<Notification> createdNotifications = new ArrayList<>();
+
+        String emailSubject;
+        String emailBody;
+        String smsBody;
+
+        if ("SUSPENSION".equalsIgnoreCase(request.getEventType())) {
+            emailSubject = "SUSPENSIÓN DE SERVICIO: Suscripción cancelada - VoicePay";
+            emailBody = String.format(
+                "<h3>Estimado/a %s,</h3>" +
+                "<p>Lamentamos informarle que, tras reiterados intentos fallidos de cobro, hemos suspendido definitivamente sus servicios y cancelado la suscripción <strong>%s</strong>.</p>" +
+                "<p>El monto adeudado acumulado es de <strong>%s %s</strong>.</p>" +
+                "<p>Si desea reactivar su suscripción o tiene alguna consulta, comuníquese con nuestro equipo de soporte.</p>" +
+                "<p>Atentamente,<br>El equipo de VoicePay</p>",
+                request.getClientName(), request.getSubscriptionName(), request.getAmount(), request.getCurrency()
+            );
+            smsBody = String.format(
+                "VoicePay: Hola %s, tu suscripcion %s ha sido cancelada y los servicios suspendidos debido al impago de %s %s.",
+                request.getClientName(), request.getSubscriptionName(), request.getAmount(), request.getCurrency()
+            );
+        } else { // WARNING or default
+            emailSubject = "Advertencia de cobro fallido - VoicePay";
+            emailBody = String.format(
+                "<h3>Estimado/a %s,</h3>" +
+                "<p>Le informamos que el cobro automático de su suscripción <strong>%s</strong> por un monto de <strong>%s %s</strong> ha fallado.</p>" +
+                "<p>Su suscripción se encuentra actualmente en estado <strong>PAST_DUE</strong>. Realizaremos reintentos de cobro automáticos en los próximos días.</p>" +
+                "<p>Por favor, verifique su método de pago para evitar la suspensión definitiva de sus servicios.</p>" +
+                "<p>Atentamente,<br>El equipo de VoicePay</p>",
+                request.getClientName(), request.getSubscriptionName(), request.getAmount(), request.getCurrency()
+            );
+            smsBody = String.format(
+                "VoicePay: Hola %s, el pago de %s %s para tu suscripcion %s ha fallado. Evita la suspension regularizando tu metodo de pago.",
+                request.getClientName(), request.getAmount(), request.getCurrency(), request.getSubscriptionName()
+            );
+        }
+
+        // 1. Crear y enviar Email (Simulado)
+        Notification emailNotification = Notification.builder()
+                .recipient(request.getEmail())
+                .message(String.format("Asunto: %s\nCuerpo:\n%s", emailSubject, emailBody))
+                .type(Notification.NotificationType.EMAIL)
+                .build();
+        
+        log.info("Simulating sending EMAIL to: {}\nSubject: {}\nBody: {}", 
+                 emailNotification.getRecipient(), emailSubject, emailBody);
+        emailNotification.setStatus(Notification.NotificationStatus.SENT);
+        createdNotifications.add(notificationRepository.save(emailNotification));
+
+        // 2. Crear y enviar SMS
+        Notification smsNotification = Notification.builder()
+                .recipient(request.getPhoneNumber())
+                .message(smsBody)
+                .type(Notification.NotificationType.SMS)
+                .build();
+
+        createdNotifications.add(sendNotification(smsNotification));
+
+        return createdNotifications;
     }
 }
 

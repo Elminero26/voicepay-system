@@ -257,8 +257,7 @@ public class SubscriptionService {
                 sub.setLastAttemptDate(now);
                 subscriptionRepository.save(sub);
 
-                String notifMsg = "ATENCIÓN: El cobro automático de su suscripción por " + sub.getAmount() + " " + sub.getCurrency() + " ha fallado. Su suscripción está en estado PAST_DUE y se reintentará.";
-                sendNotification(sub, notifMsg);
+                sendDunningNotification(sub, "WARNING");
             } else if (originalStatus == Subscription.SubscriptionStatus.PAST_DUE) {
                 // Reintento fallido
                 int newRetryCount = currentRetryCount + 1;
@@ -269,13 +268,11 @@ public class SubscriptionService {
                     sub.setStatus(Subscription.SubscriptionStatus.CANCELLED);
                     subscriptionRepository.save(sub);
 
-                    String notifMsg = "SU SUSCRIPCIÓN HA SIDO CANCELADA debido a reiterados fallos de pago tras " + maxRetries + " intentos.";
-                    sendNotification(sub, notifMsg);
+                    sendDunningNotification(sub, "SUSPENSION");
                 } else {
                     subscriptionRepository.save(sub);
 
-                    String notifMsg = "Reintento de cobro fallido (" + newRetryCount + "/" + maxRetries + "). Se intentará nuevamente más tarde.";
-                    sendNotification(sub, notifMsg);
+                    sendDunningNotification(sub, "WARNING");
                 }
             }
         }
@@ -318,6 +315,47 @@ public class SubscriptionService {
             notificationServiceClient.sendNotification(notificationRequest, headers);
         } catch (Exception e) {
             log.error("Error sending subscription notification: {}", e.getMessage());
+        }
+    }
+
+    private void sendDunningNotification(Subscription sub, String eventType) {
+        try {
+            String userName = "Usuario";
+            String email = "correo_simulado@voicepay.com";
+            String phoneNumber = "+34600123456";
+            try {
+                Map<String, Object> userResponse = userServiceClient.getUserDetails(sub.getUserId(), getHeadersWithJwt());
+                if (userResponse != null) {
+                    if (userResponse.get("name") != null) {
+                        userName = userResponse.get("name").toString();
+                    }
+                    if (userResponse.get("email") != null) {
+                        email = userResponse.get("email").toString();
+                    }
+                    if (userResponse.get("phoneNumber") != null) {
+                        phoneNumber = userResponse.get("phoneNumber").toString();
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not retrieve user details from User Service: {}", e.getMessage());
+            }
+
+            HttpHeaders headers = getHeadersWithJwt();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> dunningRequest = new HashMap<>();
+            dunningRequest.put("clientName", userName);
+            dunningRequest.put("email", email);
+            dunningRequest.put("phoneNumber", phoneNumber);
+            dunningRequest.put("subscriptionName", sub.getDescription() != null ? sub.getDescription() : "Suscripción Recurrente");
+            dunningRequest.put("amount", sub.getAmount());
+            dunningRequest.put("currency", sub.getCurrency());
+            dunningRequest.put("eventType", eventType);
+
+            log.info("Sending dunning event of type {} for subscription ID {}", eventType, sub.getId());
+            notificationServiceClient.sendDunningNotification(dunningRequest, headers);
+        } catch (Exception e) {
+            log.error("Error sending dunning notification: {}", e.getMessage());
         }
     }
 }

@@ -22,6 +22,7 @@ public class Notification {
     @Schema(description = "Destinatario de la notificación (correo electrónico o número de teléfono)", example = "+34600123456", requiredMode = Schema.RequiredMode.REQUIRED)
     private String recipient; // Phone number or email
 
+    @Column(columnDefinition = "TEXT")
     @Schema(description = "Mensaje o cuerpo del contenido de la notificación", example = "Su pago de 50.00 EUR ha sido procesado con éxito.", requiredMode = Schema.RequiredMode.REQUIRED)
     private String message;
     
